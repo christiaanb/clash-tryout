@@ -279,10 +279,15 @@ mkSelCase scrut dcI i = do
     errorMsg = " Extracting element " ++ (show i) ++ " from datacon " ++ (show dcI) ++ " from '" ++ pprString scrut ++ "'" ++ " Type: " ++ (pprString scrutTy)
 
 inlineBind :: String -> (CoreBinding -> NormalizeSession Bool) -> TransformationStep
-inlineBind callerId condition context oldExpr@(Let (Rec binds) res) = do
+inlineBind callerId condition context (Let (NonRec bndr val) res) = inlineBind' callerId condition [(bndr,val)] res context
+inlineBind callerId condition context (Let (Rec binds) res)       = inlineBind' callerId condition binds        res context
+inlineBind callerId condition context expr                        = fail "inlineBind"
+
+inlineBind' :: String -> (CoreBinding -> NormalizeSession Bool) -> [CoreBinding] -> CoreSyn.CoreExpr -> [CoreContext] -> RewriteM NormalizeSession [CoreContext] CoreSyn.CoreExpr
+inlineBind' callerId condition binds res context = do
     (replace,others) <- liftQ $ partitionM condition binds
     case (replace,others) of
-      ([],_)    -> fail "inlineBind"
+      ([],_)    -> fail callerId
       otherwise -> do
         newExpr <- doSubstitute replace (Let (Rec others) res)
         changed newExpr
@@ -303,8 +308,6 @@ inlineBind callerId condition context oldExpr@(Let (Rec binds) res) = do
       v' <- substituteAndClone bndr expr ((LetBinding bndrs):context) v
       return (b,v')
 
-inlineBind callerId condition context expr = fail "inlineBind"
-
 getGlobalExpr
   :: CoreSyn.CoreBndr
   -> NormalizeSession (Maybe CoreSyn.CoreExpr)
@@ -313,7 +316,7 @@ getGlobalExpr = getGlobalAndExtExpr
 getGlobalAndExtExpr
   :: CoreSyn.CoreBndr
   -> NormalizeSession (Maybe CoreSyn.CoreExpr)
-getGlobalAndExtExpr bndr = trace (pprString bndr) $ do
+getGlobalAndExtExpr bndr = do
   case (nameToString $ Var.varName bndr) `elem` builtinIds of
     True -> return Nothing
     False -> do
@@ -337,7 +340,6 @@ getExtExpr name = do
   exprMaybe <- Error.liftIO $ loadExtExpr name 
   case exprMaybe of
     (Just expr) -> do
-      -- addGlobalBind bndr expr
       return (Just expr)
     Nothing     -> return Nothing
 

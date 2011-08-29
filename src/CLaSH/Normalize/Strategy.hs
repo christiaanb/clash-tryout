@@ -26,11 +26,7 @@ arrowDesugarStrategy = repeatR (arrowDesugarStrategy' .+ failR "done")
 arrowDesugarStrategy' :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 arrowDesugarStrategy' = extractR $ topdownR $ foldl1 (>->) $ map (tryR . promoteR . transformationStep) steps
   where
-    steps = [ inlinenonrep
-            , letRec
-            , inlineArrowHooks
-            , betaReduce
-            , etaExpand
+    steps = [ inlineArrowBndr            
             , arrowComponentDesugar
             , arrowArrDesugar
             , arrowReturnADesugar
@@ -44,7 +40,8 @@ normalizeStrategy = repeatR (normalizeStrategy' .+ failR "done")
 normalizeStrategy' :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy' = extractR $ bottomupR $ foldl1 (>->) $ map (tryR . promoteR . transformationStep) steps
   where
-    steps = [ inlineTopLevel
+    steps = [ letRec
+            , inlineTopLevel
             , inlineNonRepResult
             , knownCase
             , funSpec          
@@ -54,7 +51,6 @@ normalizeStrategy' = extractR $ bottomupR $ foldl1 (>->) $ map (tryR . promoteR 
             , appProp
             , castPropagation
             , letRemoveSimple
-            , letRec
             , letRemove
             , retValSimpl
             , letFlat

@@ -21,7 +21,7 @@ module CLaSH.Normalize.Transformations
   , inlinenonrep
   , funSpec
   , inlineNonRepResult
-  , inlineArrowHooks
+  , inlineArrowBndr
   , arrowArrDesugar
   , arrowReturnADesugar
   , arrowFirstDesugar
@@ -537,11 +537,11 @@ inlineNonRepResult c expr = fail "inlineNonRepResult"
 -- = Arrow desugaring =
 -- ====================
 
-inlineArrowHooks :: TransformationStep
-inlineArrowHooks c expr@(Let (Rec [(bndr,val)]) res) | isArrowExpression expr = 
-  inlineBind "inlineArrowHooks" (\(b,e) -> return $ b == bndr) c expr
+inlineArrowBndr :: TransformationStep
+inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
+  inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
     
-inlineArrowHooks c expr = fail "inlineArrowHooks"
+inlineArrowBndr c expr = fail "inlineArrowHooks"
 
 arrowArrDesugar :: TransformationStep
 arrowArrDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString f) == "arr" && (not $ isApplicable expr) = do
