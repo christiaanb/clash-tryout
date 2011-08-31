@@ -155,21 +155,9 @@ mkReferenceTo :: Var.Var -> CoreSyn.CoreExpr
 mkReferenceTo var | Var.isTyVar var = (CoreSyn.Type $ Type.mkTyVarTy var)
                   | otherwise       = (CoreSyn.Var var)
 
-
 mkBinderFor ::
   CoreSyn.CoreExpr 
   -> String 
   -> NormalizeSession Var.Var
 mkBinderFor (CoreSyn.Type ty) name = mkTypeVar name (TcType.typeKind ty)
 mkBinderFor expr name              = mkInternalVar name (CoreUtils.exprType expr)
-
-mkTypeVar ::
-  String 
-  -> Type.Kind 
-  -> NormalizeSession Var.Var
-mkTypeVar name kind = do
-  uniq <- mkUnique
-  let occname = OccName.mkVarOcc (name ++ show uniq)
-  let name' = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
-  return $ Var.mkTyVar name' kind
-

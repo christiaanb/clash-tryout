@@ -19,7 +19,7 @@ normalizeStrategy :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy = repeatR (normalizeStrategy' .+ failR "done")
 
 normalizeStrategy' :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
-normalizeStrategy' = extractR $ bottomupR $ foldl1 (>->) $ map (tryR . promoteR . transformationStep) steps
+normalizeStrategy' = extractR $ foldl1 (>->) $ map (bottomupR . tryR . promoteR . transformationStep) steps
   where
     steps = [ letRec
             , inlineTopLevel

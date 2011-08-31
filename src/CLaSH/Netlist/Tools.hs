@@ -9,6 +9,8 @@ import qualified Control.Monad.Error as Error
 import qualified Data.Map as Map
 import qualified Data.Label.PureM as Label
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSubst
 import qualified DataCon
@@ -27,9 +29,9 @@ import CLaSH.Util.Pretty
 
 isReprType :: Type.Type -> NetlistSession Bool
 isReprType ty = do
-  ty <- (mkHType ty) `Error.catchError` (\_ -> return Invalid)
+  ty <- (mkHType ty) `Error.catchError` (\e -> return $ Invalid e)
   return $ case ty of
-    Invalid -> False
+    Invalid e -> trace e False
     _       -> True
     
 assertReprType :: Type.Type -> NetlistSession Bool
@@ -56,9 +58,9 @@ mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create
       case builtinMaybe of
         (Just t) -> return t
         Nothing  -> case name of
-          "()"      -> return UnitType
-          "Clock"     -> Error.throwError ($(curLoc) ++ "Clock type is not representable, has to be desugared")
-          "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, has to be desugared")
+          "()"        -> return UnitType
+          "Clock"     -> return UnitType
+          "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
           otherwise -> mkAdtHWType tyCon args
     Nothing -> Error.throwError ($(curLoc) ++ "Do not know how to make HWType out of type: " ++ pprString ty)
 

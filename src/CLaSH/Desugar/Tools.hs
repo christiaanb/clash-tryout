@@ -21,11 +21,12 @@ import CLaSH.Util.Core.Transform
 import CLaSH.Util.Core.Traverse
 
 mkDelay ::
-  [CoreSyn.CoreExpr]
+  Type.TyVar
+  -> Type.Type
   -> DesugarSession Var.Var
-mkDelay [initS,clockDomain] = do
-  let [stateTy,clockTy] = map CoreUtils.exprType [initS,clockDomain]
-  let delayTy           = Type.mkFunTys [stateTy,clockTy,stateTy] stateTy
+mkDelay sTV clockTy = do
+  let stateTy           = Type.mkTyVarTy sTV
+  let delayTy           = Type.mkForAllTy sTV $ Type.mkFunTys [stateTy,clockTy,stateTy] stateTy
   delay                 <- mkExternalVar "CLaSH.Builtin" "delay" delayTy
   return delay
 

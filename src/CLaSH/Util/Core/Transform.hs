@@ -5,6 +5,7 @@ module CLaSH.Util.Core.Transform
   , inlineBind
   , mkInternalVar
   , mkExternalVar
+  , mkTypeVar
   , mkUnique
   , regenUniques
   , substitute
@@ -21,6 +22,8 @@ import Data.Label ((:->))
 import qualified Data.Label
 import qualified Data.Label.PureM as Label
 import Language.KURE
+
+import Debug.Trace
 
 -- GHC API
 import qualified CoreSubst
@@ -47,12 +50,14 @@ import CLaSH.Util
 import CLaSH.Util.Core
 import CLaSH.Util.Core.Traverse
 import CLaSH.Util.Core.Types
+import CLaSH.Util.Pretty
 
 changed ::
   (Monad m)
-  => CoreSyn.CoreExpr
+  => String
+  -> CoreSyn.CoreExpr
   -> RewriteM (TransformSession m) [CoreContext] CoreSyn.CoreExpr
-changed expr = do
+changed tId expr = trace tId $ do
   liftQ $ Label.modify tsTransformCounter (+1) 
   markM $ return expr
 
@@ -79,7 +84,7 @@ inlineBind' callerId condition binds res context = do
       ([],_)    -> fail callerId
       otherwise -> do
         newExpr <- doSubstitute replace (Let (Rec others) res)
-        changed newExpr
+        changed callerId newExpr
   where
     doSubstitute :: 
       (Monad m)
@@ -242,3 +247,14 @@ mkExternalVar modName funName ty = do
   let name'   = Name.mkExternalName uniq extMod occName SrcLoc.noSrcSpan
   let var'    = Var.mkGlobalVar IdInfo.VanillaId name' ty IdInfo.vanillaIdInfo
   return var'
+
+mkTypeVar ::
+  (Monad m)
+  => String 
+  -> Type.Kind 
+  -> (TransformSession m) Var.Var
+mkTypeVar name kind = do
+  uniq <- mkUnique
+  let occname = OccName.mkVarOcc (name ++ show uniq)
+  let name' = Name.mkInternalName uniq occname SrcLoc.noSrcSpan
+  return $ Var.mkTyVar name' kind

@@ -14,7 +14,7 @@ data HWType = BitType
             | UnitType
             | CompType
             -- | ClockType
-            | Invalid
+            | Invalid String
   deriving (Eq,Ord,Show)
 
 data NetlistState = NetlistState {

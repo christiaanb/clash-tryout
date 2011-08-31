@@ -165,11 +165,11 @@ caseR :: (Monad m)
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
 caseR rr1 rr2 = transparently $ rewrite $ \e -> case e of
-  (CoreSyn.Case scrut b t alts) -> do
+  expr@(CoreSyn.Case scrut b t alts) -> do
     scrut' <- KURE.apply rr1 scrut
     alts' <- mapM (transAlt b) alts
     return $ CoreSyn.Case scrut' b t alts'
-  expr                          -> fail $ "caseR: " ++ pprString expr
+  _                                  -> fail $ "caseR"
   where
     transAlt b (con, binders, expr) = do
       expr' <- apply (CaseAlt b) rr2 expr

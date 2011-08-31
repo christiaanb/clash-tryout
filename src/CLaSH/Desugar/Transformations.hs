@@ -2,6 +2,7 @@ module CLaSH.Desugar.Transformations
 where
 
 -- External Modules
+import qualified Control.Monad as Monad
 import qualified Control.Monad.Error as Error
 import qualified Data.Maybe as Maybe
 import Language.KURE
@@ -12,6 +13,7 @@ import qualified CoreSyn
 import qualified CoreUtils
 import qualified MkCore
 import qualified Name
+import qualified TcType
 import qualified Type
 import qualified TysWiredIn
 import qualified Var
@@ -32,131 +34,95 @@ inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
 inlineArrowBndr c expr = fail "inlineArrowHooks"
 
 arrDesugar :: DesugarStep
-arrDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString f) == "arr" && (not $ isApplicable expr) = do
-    let [liftedFun] = getValArgs (Var.varType f) alreadyMappedArgs
-    let [argTy]   = (fst . Type.splitFunTys . CoreUtils.exprType) liftedFun
-    paramId <- liftQ $ mkInternalVar "param" argTy
-    let liftedFunApp  = App liftedFun (Var paramId)
-    let desugaredExpr = Lam paramId liftedFunApp
-    changed desugaredExpr
-  where
-    (fexpr, alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var f)                    = fexpr
+arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do
+  let compTy                      = CoreUtils.exprType expr
+  let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+  let ([bTV,cTV],_,compTy'')      = TcType.tcSplitSigmaTy compTy'
+  let ([fTy],_)                   = TcType.tcSplitFunTys compTy''
+  fId                             <- liftQ $ mkInternalVar "tFun" fTy
+  arrowDictId                     <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+  let resExpr                     = MkCore.mkCoreLams [arrTV,arrowDictId,bTV,cTV,fId] (Var fId)
+  changed "arrDesugar" resExpr
   
 arrDesugar ctx expr = fail "arrowArrDesugar"
 
 returnADesugar :: DesugarStep
-returnADesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString f) == "returnA" && (not $ isApplicable expr) = do
-    case ((Type.splitTyConApp_maybe . CoreUtils.exprType) expr) of
-      Nothing -> liftQ $ Error.throwError $ $(curLoc) ++ "returnA?\n" ++ pprString expr ++ "\n" ++ pprString (CoreUtils.exprType expr)
-      Just arrType -> do
-        -- Create 2 new Vars of which the 2nd is of the value type of the arrow
-        let argTy = (head . snd) arrType
-        paramId <- liftQ $ mkInternalVar "param" argTy
-        -- Return the extracted expression 
-        let packinps = Var paramId
-        changed $ Lam paramId packinps
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var f)                   = fexpr
-    
+returnADesugar ctx expr@(Var returnA) | (Name.getOccString returnA) == "returnA" = do
+  let compTy                          = CoreUtils.exprType expr
+  let ([aTV,bTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+  arrowDictId                         <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+  outId                               <- liftQ $ mkInternalVar "out" (Type.mkTyVarTy bTV)
+  let resExpr                         = MkCore.mkCoreLams [aTV,bTV,arrowDictId,outId] (Var outId)
+  changed "returnADesugar" resExpr
+
 returnADesugar ctx expr = fail "arrowReturnADesugar"
 
-desugarSubExpression f = do
-  if isArrowExpression f
-    then do
-      case f of
-        (Var bndr) -> do
-          realFExpr <- liftQ $ desugarBndr bndr
-          let realFExprType = CoreUtils.exprType realFExpr
-          return (Var $ Var.setVarType bndr realFExprType)
-        otherwise -> liftQ $ desugarExpr "first" f 
-    else
-      return f
-
 hooksDesugar :: DesugarStep
-hooksDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString hooks) == ">>>" && (not $ isApplicable expr) = do
-    let [f,g] = getValArgs (Var.varType hooks) alreadyMappedArgs
-    realF <- desugarSubExpression f
-    realG <- desugarSubExpression g
-    let [fSplit,gSplit] = map (Type.splitFunTys . CoreUtils.exprType) [realF,realG]
-    [([fInpTy], fResTy),([gInpTy], gResTy)] <- case [fSplit,gSplit] of {
-        ; [([fInpTy], fResTy),([gInpTy], gResTy)] -> return [([fInpTy], fResTy),([gInpTy], gResTy)]
-        ; x -> liftQ $ Error.throwError $ $(curLoc) ++ "Unexpected Arrow Type:\n" ++ pprString expr
-        }
-    betaId <- liftQ $ mkInternalVar "betaHooks" fInpTy
-    gammaId <- liftQ $ mkInternalVar "gammaHooks" gInpTy
-    deltaId <- liftQ $ mkInternalVar "deltaHooks" gResTy
-    let letexprs = Rec [ (gammaId, (App realF (Var betaId)))
-                       , (deltaId, (App realG (Var gammaId)))
-                       ]
-    let letExpression = MkCore.mkCoreLets [letexprs] (Var deltaId)       
-    changed (Lam betaId letExpression)
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var hooks)               = fexpr
+hooksDesugar ctx expr@(Var hooks) | (Name.getOccString hooks) == ">>>" = do
+  let compTy                        = CoreUtils.exprType expr
+  let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+  let ([aTV,bTV,cTV],_,_)           = TcType.tcSplitSigmaTy compTy'
+  let [aTy,bTy,cTy]                 = map Type.mkTyVarTy [aTV,bTV,cTV]
+  let fTy                           = Type.mkFunTy aTy bTy
+  let gTy                           = Type.mkFunTy bTy cTy
+  [fId,gId]                         <- liftQ $ Monad.zipWithM mkInternalVar ["f","g"] [fTy,gTy]
+  [inpId,conId,outpId]              <- liftQ $ Monad.zipWithM mkInternalVar ["inp","con","outp"] [aTy, bTy, cTy]
+  let letBndrs = Rec [ (conId, App (Var fId) (Var inpId))
+                     , (outpId, App (Var gId) (Var conId))
+                     ]
+  let resExpr = MkCore.mkCoreLams [arrTV,arrowDictId,aTV,bTV,cTV,fId,gId,inpId] (MkCore.mkCoreLet letBndrs (Var outpId))
+  changed "hooksDesugar" resExpr
 
 hooksDesugar ctx expr = fail "arrowHooksDesugar"
 
 firstDesugar :: DesugarStep
-firstDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString first) == "first" && (not $ isApplicable expr) = do
-    let deltaTy = (last . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(1)")) . Type.splitTyConApp_maybe . head . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(0)")) . Type.splitTyConApp_maybe . CoreUtils.exprType) expr
-    -- let gammaTy = (head . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (gamma)(1)")) . Type.splitTyConApp_maybe . last . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(0)")) . Type.splitTyConApp_maybe . CoreUtils.exprType) expr
-    -- Retreive the packed functions     
-    let [f] = getValArgs (Var.varType first) alreadyMappedArgs
-    realF <- desugarSubExpression f
-    let ([betaTy], gammaTy) = (Type.splitFunTys . CoreUtils.exprType) realF
-    let inputTy = TysWiredIn.mkBoxedTupleTy [betaTy,deltaTy]
-    inputId <- liftQ $ mkInternalVar "inputFirst" inputTy
-    -- Unpack input into input for function f and delta
-    betaScrutId <- liftQ $ mkInternalVar "betaScrutFirst" betaTy
-    deltaScrutId <- liftQ $ mkInternalVar "deltaScrutFirst" deltaTy
-    betaId <- liftQ $ mkInternalVar "betaFirst" betaTy
-    deltaId <- liftQ $ mkInternalVar "deltaFirst" deltaTy
-    let unpackBeta = MkCore.mkSmallTupleSelector [betaScrutId,deltaScrutId] betaScrutId (MkCore.mkWildValBinder inputTy) (Var inputId)
-    let unpackDelta = MkCore.mkSmallTupleSelector [betaScrutId,deltaScrutId] deltaScrutId (MkCore.mkWildValBinder inputTy) (Var inputId)
-    -- Retreive the output of f
-    gammaId <- liftQ $ mkInternalVar "gammaFirst" gammaTy
-    -- Pack the result of f and delta
-    let resPack = MkCore.mkCoreTup [Var gammaId, Var deltaId]
-    gammaDeltaTPId <- liftQ $ mkInternalVar "gammaDeltaFirst" (CoreUtils.exprType resPack)
-    let letexprs = Rec [ (betaId, unpackBeta)
-                       , (deltaId, unpackDelta)
-                       , (gammaId, App realF (Var betaId))
-                       , (gammaDeltaTPId, resPack)
-                       ]
-    let letExpression = MkCore.mkCoreLets [letexprs] (Var gammaDeltaTPId)   
-    changed (Lam inputId letExpression) 
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var first)               = fexpr
+firstDesugar ctx expr@(Var first) | (Name.getOccString first) == "first" = do
+  let compTy                        = CoreUtils.exprType expr
+  let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+  let ([bTV,cTV,dTV],_,_)           = TcType.tcSplitSigmaTy compTy'
+  let [bTy,cTy,dTy]                 = map Type.mkTyVarTy [bTV,cTV,dTV]
+  let fTy                           = Type.mkFunTy bTy cTy
+  [bId,bSId]                        <- liftQ $ Monad.zipWithM mkInternalVar ["b","bS"] [bTy,bTy]
+  [dId,dSId]                        <- liftQ $ Monad.zipWithM mkInternalVar ["d","dS"] [dTy,dTy]
+  cId                               <- liftQ $ mkInternalVar "c" cTy
+  fId                               <- liftQ $ mkInternalVar "f" fTy
+  let inpTy                         = TysWiredIn.mkBoxedTupleTy [bTy, dTy]
+  let outpTy                        = TysWiredIn.mkBoxedTupleTy [cTy, dTy]
+  [inpId,outpId]                    <- liftQ $ Monad.zipWithM mkInternalVar ["inp","outp"] [inpTy,outpTy]
+  let unpackB                       = MkCore.mkSmallTupleSelector [bSId,dSId] bSId (MkCore.mkWildValBinder inpTy) (Var inpId)
+  let unpackD                       = MkCore.mkSmallTupleSelector [bSId,dSId] dSId (MkCore.mkWildValBinder inpTy) (Var inpId)
+  let letBndrs = Rec [ (bId, unpackB)
+                     , (dId, unpackD)
+                     , (cId, App (Var fId) (Var bId))
+                     , (outpId, MkCore.mkCoreTup [Var cId, Var dId])
+                     ]
+  let resExpr = MkCore.mkCoreLams [arrTV,arrowDictId,bTV,cTV,dTV,fId,inpId] (MkCore.mkCoreLet letBndrs (Var outpId))
+  changed "firstDesugar" resExpr
 
 firstDesugar ctx expr = fail "arrowFirstDesugar"
 
 componentDesugar :: DesugarStep
-componentDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString component) == "component" && (not $ isApplicable expr) = do
-    let [f,initS,clockDom]          = getValArgs (Var.varType component) alreadyMappedArgs
-    let ([fStateTy,fInpTy], fResTy) = (Type.splitFunTys . CoreUtils.exprType) f
-    let (_,[_,fOutpTy])             = Type.splitAppTys fResTy
-    inputId                         <- liftQ $ mkInternalVar "componentInput"   fInpTy
-    outputId                        <- liftQ $ mkInternalVar "componentOutput"  fOutpTy
-    outputScrutId                   <- liftQ $ mkInternalVar "componentOutputS" fOutpTy
-    resId                           <- liftQ $ mkInternalVar "componentResult"  fResTy
-    stateId                         <- liftQ $ mkInternalVar "componentState"   fStateTy
-    statePrimeId                    <- liftQ $ mkInternalVar "componentStateP"  fStateTy
-    statePrimeScrutId               <- liftQ $ mkInternalVar "componentStatePS" fStateTy
-    let unpackStatePrime            = MkCore.mkSmallTupleSelector [statePrimeScrutId,outputScrutId] statePrimeScrutId (MkCore.mkWildValBinder fResTy) (Var resId)
-    let unpackOutput                = MkCore.mkSmallTupleSelector [statePrimeScrutId,outputScrutId] outputScrutId     (MkCore.mkWildValBinder fResTy) (Var resId)
-    delayFunc                       <- liftQ $ mkDelay [initS,clockDom]
-    let letBndrs                    = Rec [ (resId       , MkCore.mkCoreApps f [Var stateId, Var inputId])
-                                          , (statePrimeId, unpackStatePrime)
-                                          , (outputId    , unpackOutput)
-                                          , (stateId     , MkCore.mkCoreApps (Var delayFunc) [initS,clockDom, Var statePrimeId])
-                                          ]
-    let letExpression               = MkCore.mkCoreLets [letBndrs] (Var outputId)
-    changed (Lam inputId letExpression)
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var component)               = fexpr
+componentDesugar ctx expr@(Var component) | (Name.getOccString component) == "component" = do
+  let compTy                      = CoreUtils.exprType expr
+  let ([sTV,iTV,oTV],_,compTy')   = TcType.tcSplitSigmaTy compTy
+  let [iTy,oTy]                   = TcType.mkTyVarTys [iTV,oTV]
+  let ([fTy,sTy,clockTy],_)       = TcType.tcSplitFunTys compTy'
+  let (_,resTy)                   = TcType.tcSplitFunTys fTy
+  [fId,initSId,clockId]           <- liftQ $ Monad.zipWithM mkInternalVar ["tFun","initS","clock"]        [fTy,sTy,clockTy]
+  [inputId,outputId,outputSId]    <- liftQ $ Monad.zipWithM mkInternalVar ["input","output","outputS"]    [iTy,oTy,oTy]
+  resId                           <- liftQ $ mkInternalVar "result" resTy
+  [stateInId,stateOutId,stateSId] <- liftQ $ Monad.zipWithM mkInternalVar ["stateIn","stateOut","stateS"] [sTy,sTy,sTy]
+  let unpackStateOut              = MkCore.mkSmallTupleSelector [stateSId,outputSId] stateSId  (MkCore.mkWildValBinder resTy) (Var resId)
+  let unpackOutput                = MkCore.mkSmallTupleSelector [stateSId,outputSId] outputSId (MkCore.mkWildValBinder resTy) (Var resId)
+  delayFunc                       <- liftQ $ mkDelay sTV clockTy
+  let letBndrs                    = Rec [ (resId, MkCore.mkCoreApps (Var fId) [Var stateInId, Var inputId])
+                                        , (stateOutId, unpackStateOut)
+                                        , (outputId, unpackOutput)
+                                        , (stateInId, MkCore.mkCoreApps (Var delayFunc) [Type sTy, Var initSId, Var clockId, Var stateOutId] )
+                                        ]
+  let resExpr = MkCore.mkCoreLams [sTV,iTV,oTV,fId,initSId,clockId,inputId] (MkCore.mkCoreLet letBndrs (Var outputId))
+  changed "componentDesugar" resExpr
 
 componentDesugar ctx expr = fail "arrowComponentDesugar"

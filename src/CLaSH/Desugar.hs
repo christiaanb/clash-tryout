@@ -15,6 +15,8 @@ import qualified Data.Label as Label
 import qualified Data.Label.PureM as LabelM
 import Language.KURE (runRewrite)
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSyn
 
@@ -26,6 +28,7 @@ import CLaSH.Driver.Types
 import CLaSH.Util
 import CLaSH.Util.Core.Types
 import CLaSH.Util.Core.Traverse (startContext)
+import CLaSH.Util.Pretty
 
 desugar ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr

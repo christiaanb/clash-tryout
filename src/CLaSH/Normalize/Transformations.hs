@@ -34,8 +34,6 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Label.PureM as Label
 import Language.KURE
 
-import Debug.Trace
-
 -- GHC API
 import qualified BasicTypes
 import qualified Coercion
@@ -72,8 +70,8 @@ import CLaSH.Util.Pretty
 -- β-reduction
 --------------------------------
 betaReduce :: NormalizeStep
-betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute bndr arg ctx expr >>= changed
-                                         | otherwise        = substituteAndClone bndr arg ctx expr >>= changed
+betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute         bndr arg ctx expr >>= (changed "beta")
+                                         | otherwise        = substituteAndClone bndr arg ctx expr >>= (changed "beta")
 
 betaReduce ctx expr                                         = fail "beta"
 
@@ -85,7 +83,7 @@ letRemoveUnused ctx expr@(Let (Rec binds) res) = do
     let binds' = filter doBind binds
     if (length binds /= length binds')
       then
-        changed (Let (Rec binds') res)
+        changed "letRemoveUnused" (Let (Rec binds') res)
       else
         fail "letRemoveUnused"
   where
@@ -98,7 +96,7 @@ letRemoveUnused ctx expr = fail "letRemoveUnused"
 -- empty let removal
 --------------------------------
 letRemove :: NormalizeStep
-letRemove ctx (Let (Rec []) res) = changed res
+letRemove ctx (Let (Rec []) res) = changed "letRemove" res
 
 letRemove ctx expr               = fail "letRemove"
 
@@ -112,8 +110,8 @@ letRemoveSimple = inlineBind "letRemoveSimple" (\(b,e) -> isLocalVar e)
 -- = Cast Propagation =
 -- ====================
 castPropagation :: NormalizeStep
-castPropagation ctx (Cast (Let binds expr) ty)       = changed $ Let binds (Cast expr ty)
-castPropagation ctx (Cast (Case scrut b ty alts) co) = changed $ Case scrut b (Coercion.applyCo ty co) alts'
+castPropagation ctx (Cast (Let binds expr) ty)       = changed "castPropagation" $ Let binds (Cast expr ty)
+castPropagation ctx (Cast (Case scrut b ty alts) co) = changed "castPropagation" $ Case scrut b (Coercion.applyCo ty co) alts'
   where
     alts' = map (\(con,bndrs,expr) -> (con,bndrs, Cast expr co)) alts
 castPropagation ctx expr = fail "castPropagation"
@@ -128,7 +126,7 @@ castSimplification ctx expr@(Cast val ty) = do
   if (not localVar) && repr
     then do
       castValId <- liftQ $ mkBinderFor val "castVal"
-      changed $ Let (Rec [(castValId,val)]) (Cast (Var castValId) ty)
+      changed "castSimplification" $ Let (Rec [(castValId,val)]) (Cast (Var castValId) ty)
     else
       fail "castSimplification"
       
@@ -145,7 +143,7 @@ inlineTopLevel ctx@((LetBinding _):_) expr | not (isFun expr) =
       case bodyMaybe of
         Just body -> do
           bodyUniqued <- regenUniques ctx body
-          changed (CoreSyn.mkApps bodyUniqued args)
+          changed "inlineTopLevel" (CoreSyn.mkApps bodyUniqued args)
         Nothing -> fail "inlineTopLevel"
     _ -> fail "inlineTopLevel"
 
@@ -181,7 +179,7 @@ etaExpand (AppSecond:cs) expr = fail "eta"
 etaExpand ctx expr | isFun expr && not (isLam expr) = do
   let argTy = (fst . Type.splitFunTy . CoreUtils.exprType) expr
   newId <- liftQ $ mkInternalVar "param" argTy
-  changed (Lam newId (App expr (Var newId)))
+  changed "eta" (Lam newId (App expr (Var newId)))
 
 etaExpand ctx expr = fail "eta"
 
@@ -189,9 +187,9 @@ etaExpand ctx expr = fail "eta"
 -- Application propagation
 --------------------------------
 appProp :: NormalizeStep
-appProp ctx (App (Let binds expr) arg)        = changed $ Let binds (App expr arg)
+appProp ctx (App (Let binds expr) arg)        = changed "appProp" $ Let binds (App expr arg)
 
-appProp ctx (App (Case scrut b ty alts) arg)  = changed $ Case scrut b ty' alts'
+appProp ctx (App (Case scrut b ty alts) arg)  = changed "appProp" $ Case scrut b ty' alts'
   where
     alts' = map (\(con,bndrs,expr) -> (con,bndrs, App expr arg)) alts
     ty'   = CoreUtils.applyTypeToArg ty arg
@@ -202,7 +200,7 @@ appProp ctx expr                              = fail "appProp"
 -- Let recursification
 -------------------------------- 
 letRec :: NormalizeStep
-letRec ctx (Let (NonRec bndr val) res) = changed $ Let (Rec [(bndr,val)]) res
+letRec ctx (Let (NonRec bndr val) res) = changed "letRec" $ Let (Rec [(bndr,val)]) res
 
 letRec ctx expr                        = fail "letRec"
 
@@ -214,7 +212,7 @@ letFlat c topExpr@(Let (Rec binds) expr) = do
     let (binds',updated) = unzip $ map flatBind binds
     if (or updated) 
       then do
-        changed $ Let (Rec $ concat binds') expr
+        changed "letFlat" $ Let (Rec $ concat binds') expr
       else
         fail "letFlat"
   where
@@ -234,7 +232,7 @@ retValSimpl ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet
   if not localVar && repr
     then do
       resId <- liftQ $ mkBinderFor expr "res"
-      changed $ Let (Rec [(resId, expr)]) (Var resId)
+      changed "retValSimpl" $ Let (Rec [(resId, expr)]) (Var resId)
     else
       fail "retValSimpl"
 
@@ -244,7 +242,7 @@ retValSimpl ctx expr@(Let (Rec binds) body) | all isLambdaBodyCtx ctx = do
   if not localVar && repr
     then do
       resId <- liftQ $ mkBinderFor body "res"
-      changed $ Let (Rec $ (resId,body):binds) (Var resId)
+      changed "retValSimpl" $ Let (Rec $ (resId,body):binds) (Var resId)
     else
       fail "retValSimpl"
 
@@ -260,7 +258,7 @@ appSimpl ctx expr@(App f arg) = do
   if repr && not localVar
     then do
       argId <- liftQ $ mkBinderFor arg "arg"
-      changed $ Let (Rec [(argId,arg)]) (App f (Var argId))
+      changed "appSimpl" $ Let (Rec [(argId,arg)]) (App f (Var argId))
     else
       fail "appSimpl"
 
@@ -277,7 +275,7 @@ funExtract ctx expr@(App _ _) | isVar fexpr = do
         args' <- liftQ $ mapM doArg args
         if or (map fst args') 
           then
-            changed $ MkCore.mkCoreApps fexpr (map snd args')
+            changed "funExtract" $ MkCore.mkCoreApps fexpr (map snd args')
           else
             fail "funExtract"
       Just _ -> fail "funExtract"
@@ -310,7 +308,7 @@ scrutSimpl c expr@(Case scrut b ty alts) = do
   if repr && not localVar
     then do
       scrutId <- liftQ $ mkBinderFor scrut "scrut"
-      changed $ Let (Rec [(scrutId,scrut)]) (Case (Var scrutId) b ty alts)
+      changed "scrutSimpl" $ Let (Rec [(scrutId,scrut)]) (Case (Var scrutId) b ty alts)
     else
       fail "scrutSimpl"
 
@@ -322,7 +320,7 @@ scrutSimpl ctx expr = fail "scrutSimpl"
 scrutBndrRemove :: NormalizeStep
 scrutBndrRemove ctx (Case (Var scrut) bndr ty alts) | bndrUsed = do
     alts' <- mapM substBndrAlt alts
-    changed $ Case (Var scrut) wild ty alts'
+    changed "scrutBndrRemove" $ Case (Var scrut) wild ty alts'
   where
     isUsed (_,_,expr) = exprUsesBinders [bndr] expr
     bndrUsed          = or $ map isUsed alts
@@ -345,7 +343,7 @@ caseSimpl ctx topExpr@(Case scrut bndr ty alts) | not bndrUsed = do
     let newLet   = MkCore.mkCoreLet (Rec bindings) (Case scrut bndr ty alts')
     if null bindings
       then fail "caseSimpl"
-      else changed newLet
+      else changed "caseSimpl" newLet
   where
     isUsed (_,_,expr) = exprUsesBinders [bndr] expr
     bndrUsed = or $ map isUsed alts
@@ -405,7 +403,7 @@ caseSimpl ctx expr = fail "caseSimpl"
 -- = Case Removal =
 -- ================
 caseRemove :: NormalizeStep
-caseRemove ctx (Case scrut b ty [(con,bndrs,expr)]) | not usesVars = changed expr
+caseRemove ctx (Case scrut b ty [(con,bndrs,expr)]) | not usesVars = changed "caseRemove" expr
   where
     usesVars = exprUsesBinders (b:bndrs) expr
 caseRemove ctx expr = fail "caseRemove"
@@ -429,7 +427,7 @@ knownCase ctx expr@(Case scrut@(App _ _) bndr ty alts) | not bndrUsed = do
               let (tvs, preds, _, _) = DataCon.dataConSig dc
               let count = length tvs + length preds
               let binds = zip bndrs (drop count args)
-              changed $ Let (Rec binds) res
+              changed "knownCase" $ Let (Rec binds) res
   where
     isUsed (_, _, expr) = exprUsesBinders [bndr] expr
     bndrUsed            = or $ map isUsed alts
@@ -463,7 +461,7 @@ funSpec ctx expr@(App _ _) | isVar fexpr = do
             let newBody   = MkCore.mkCoreLams newParams (MkCore.mkCoreApps body oldArgs)
             newf <- liftQ $ mkFunction f newBody
             let newExpr = MkCore.mkCoreApps (Var newf) newArgs
-            changed newExpr
+            changed "funSpec" newExpr
           False ->
             fail "funSpec"
       Nothing -> fail "funSpec"
@@ -523,7 +521,7 @@ inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr
                   let binds = (resBndr,newApp):(zip freeVars selCases)
                   let letExpr = Let (Rec binds) res
                   letExprUniqued <- regenUniques ctx letExpr
-                  changed letExprUniqued
+                  changed "inlineNonRepResult" letExprUniqued
             Nothing -> fail "inlineNonRepResult"
         else
           fail "inlineNonRepResult"
