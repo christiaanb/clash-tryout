@@ -1,7 +1,5 @@
 module CLaSH.Desugar
   ( desugar
-  , desugarBndr
-  , desugarExpr
   )
 where
 

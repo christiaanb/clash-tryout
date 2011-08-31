@@ -19,7 +19,6 @@ import qualified TysWiredIn
 import qualified Var
 
 -- Internal Modules
-import {-# SOURCE #-} CLaSH.Desugar (desugarBndr,desugarExpr)
 import CLaSH.Desugar.Tools
 import CLaSH.Desugar.Types
 import CLaSH.Util
