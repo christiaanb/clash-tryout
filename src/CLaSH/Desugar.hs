@@ -5,7 +5,7 @@ where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
-import qualified Control.Monad.State as State
+import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -44,9 +44,10 @@ desugar globals bndr = do
     Left  errMsg -> error errMsg
     Right _ -> do
       let uniqSupply' = Label.get tsUniqSupply tState
+      let transformations = Label.get tsTransformCounter tState
       let desugared   = Label.get dsDesugared  dState
       LabelM.puts drUniqSupply uniqSupply'
-      return $ desugared `Map.union` globals
+      return $ trace ("Desugar transformations: " ++ show transformations) $ desugared `Map.union` globals
 
 desugar' ::
   CoreSyn.CoreBndr

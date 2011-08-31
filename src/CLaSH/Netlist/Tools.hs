@@ -31,8 +31,8 @@ isReprType :: Type.Type -> NetlistSession Bool
 isReprType ty = do
   ty <- (mkHType ty) `Error.catchError` (\e -> return $ Invalid e)
   return $ case ty of
-    Invalid e -> trace e False
-    _       -> True
+    Invalid e -> False
+    _         -> True
     
 assertReprType :: Type.Type -> NetlistSession Bool
 assertReprType ty = do
@@ -77,7 +77,7 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
           elemHTyss <- mapM (mapM mkHType) realArgTys
           case (dcs, map (filter (/= UnitType)) elemHTyss) of
             ([dc], [elemHTysMinU]) -> return $ ProductType name elemHTysMinU
-            (dcs,elemHTysMinU)     -> Error.throwError ($(curLoc) ++ "Cannot convert SumOfProduct Types to HWTypes: " ++ pprString tyCon)
+            (dcs,elemHTysMinU)     -> return $ SPType name $ zip (map (nameToString . DataCon.dataConName) dcs) elemHTysMinU --Error.throwError ($(curLoc) ++ "Cannot convert SumOfProduct Types to HWTypes: " ++ pprString tyCon)
   where
     name = nameToString $ TyCon.tyConName tyCon
     

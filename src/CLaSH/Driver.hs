@@ -4,7 +4,7 @@ module CLaSH.Driver
 where
 
 -- External Modules
-import qualified Control.Monad.State as State
+import qualified Control.Monad.State.Strict as State
 import qualified Data.Time.Clock as Clock
 import qualified Data.Map as Map
 import Data.Label.PureM

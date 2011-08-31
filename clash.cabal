@@ -48,7 +48,7 @@ Cabal-version:       >=1.2
 
 Library
   -- Modules exported by the library.
-  Exposed-modules:     CLaSH, CLaSH.Builtin, CLaSH.Driver
+  Exposed-modules:     CLaSH
   
   HS-Source-Dirs:      src
 
@@ -58,7 +58,7 @@ Library
   Build-depends:       base, containers, ghc, fclabels, kure, time, mtl, template-haskell, prettyclass, ghc-paths, th-lift, tfp
   
   -- Modules not exported by this package.
-  Other-modules:       CLaSH.Normalize, CLaSH.Util, CLaSH.Driver.Tools, CLaSH.Driver.Types, CLaSH.Netlist.Constants, CLaSH.Netlist.Tools, CLaSH.Netlist.Types, CLaSH.Normalize.Strategy, CLaSH.Normalize.Tools, CLaSH.Normalize.Transformations, CLaSH.Normalize.Traverse, CLaSH.Normalize.Types, CLaSH.Util.Core, CLaSH.Util.GHC, CLaSH.Util.Pretty, CLaSH.Util.Core.Pretty, CLaSH.Util.Core.Show, CLaSH.Util.GHC.LoadExtExpr, CLaSH.Util.GHC.LoadModules, Data.Sized.Integer, Data.Sized.Index, Data.Sized.Signed, Data.Sized.Unsigned, Data.Sized.Vector
+  Other-modules:       CLaSH.Builtin, CLaSH.Desugar, CLaSH.Normalize, CLaSH.Driver, CLaSH.Util, CLaSH.Desugar.Strategy, CLaSH.Desugar.Tools, CLaSH.Desugar.Transformations, CLaSH.Desugar.Types, CLaSH.Driver.Tools, CLaSH.Driver.Types, CLaSH.Netlist.Constants, CLaSH.Netlist.Tools, CLaSH.Netlist.Types, CLaSH.Normalize.Strategy, CLaSH.Normalize.Tools, CLaSH.Normalize.Transformations, CLaSH.Normalize.Types, CLaSH.Util.Core, CLaSH.Util.GHC, CLaSH.Util.Pretty, CLaSH.Util.Core.Pretty, CLaSH.Util.Core.Show, CLaSH.Util.Core.Transform, CLaSH.Util.Core.Traverse, CLaSH.Util.Core.Types, CLaSH.Util.GHC.LoadExtExpr, CLaSH.Util.GHC.LoadModules, Data.Sized.Integer, Data.Sized.Index, Data.Sized.Signed, Data.Sized.Unsigned, Data.Sized.Vector
   
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
   -- Build-tools:         

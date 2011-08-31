@@ -2,7 +2,7 @@ module CLaSH.Util.Core.Types
 where
 
 -- External Modules
-import Control.Monad.State (StateT)
+import Control.Monad.State.Strict (StateT)
 import Control.Monad.Error (ErrorT)
 import qualified Data.Label
 import Language.KURE

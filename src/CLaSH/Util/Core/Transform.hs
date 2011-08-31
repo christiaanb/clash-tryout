@@ -57,7 +57,7 @@ changed ::
   => String
   -> CoreSyn.CoreExpr
   -> RewriteM (TransformSession m) [CoreContext] CoreSyn.CoreExpr
-changed tId expr = trace tId $ do
+changed tId expr = do
   liftQ $ Label.modify tsTransformCounter (+1) 
   markM $ return expr
 

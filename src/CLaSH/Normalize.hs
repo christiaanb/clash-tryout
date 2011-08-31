@@ -8,7 +8,7 @@ where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
-import qualified Control.Monad.State as State
+import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -57,9 +57,10 @@ normalize globals bndr = do
     Left  errMsg -> error errMsg
     Right _ -> do
       let uniqSupply' = Label.get tsUniqSupply tState
+      let transformations = Label.get tsTransformCounter tState
       let normalized  = Label.get nsNormalized nState
       LabelM.puts drUniqSupply uniqSupply'
-      return normalized
+      return $ trace ("Normalize transformations: " ++ show transformations)  normalized
 
 normalize'
   :: Bool
@@ -76,7 +77,11 @@ normalize' nonRepr (bndr:bndrs) = do
         else do
           normalizedExpr <- makeCached bndr nsNormalized $
             normalizeExpr (show bndr) expr
-          let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars (\v -> (not $ Id.isDictId v) && (nameToString $ Var.varName v) `notElem` builtinIds) normalizedExpr
+          let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+                              (\v -> (not $ Id.isDictId v) && 
+                                     (not $ Id.isDataConWorkId v) && 
+                                     (nameToString $ Var.varName v) `notElem` builtinIds) 
+                              normalizedExpr
           normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
           return ((bndr,normalizedExpr):normalizedOthers)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."

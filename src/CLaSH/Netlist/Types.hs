@@ -9,8 +9,9 @@ import Data.Map (Map,fromList)
 
 data HWType = BitType
             | SignedType Int
-            | SumType String [String]
+            | SumType     String [String]
             | ProductType String [HWType]
+            | SPType      String [(String,[HWType])]
             | UnitType
             | CompType
             -- | ClockType
