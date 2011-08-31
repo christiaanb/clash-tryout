@@ -13,8 +13,7 @@ data HWType = BitType
             | ProductType String [HWType]
             | SPType      String [(String,[HWType])]
             | UnitType
-            | CompType
-            -- | ClockType
+            | ClockType
             | Invalid String
   deriving (Eq,Ord,Show)
 
@@ -22,7 +21,7 @@ data NetlistState = NetlistState {
   _nlTypes :: Map String HWType
 }
 
-empytNetlistState = NetlistState (fromList [("Bit",BitType)])
+empytNetlistState = NetlistState (fromList [("Bit",BitType),("Clock", ClockType),("()", UnitType)])
 
 Data.Label.mkLabels [''NetlistState]
 

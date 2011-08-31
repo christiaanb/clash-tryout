@@ -113,6 +113,6 @@ normalizeExpr
 normalizeExpr bndr expr = do
   rewritten <- runRewrite normalizeStrategy startContext expr
   expr' <- case rewritten of
-    Right (expr',_,_) -> return expr'
+    Right (expr',_,_) -> trace bndr $ return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
   return expr'

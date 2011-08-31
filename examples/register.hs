@@ -8,5 +8,8 @@ registerT q d = (d,q)
 
 topEntity :: Component Bit (Maybe Bit)
 topEntity = proc inp -> do
-  outp <- component registerT L (ClockUp 1) -< inp
+  outp <- registerT ^^^ L -< inp
   returnA -< (Just outp)
+
+sysClock :: Clock
+sysClock = ClockUp "sysClock" 1

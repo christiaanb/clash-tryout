@@ -20,6 +20,7 @@ module CLaSH.Builtin
   , Clock(..)
   , Component
   , component
+  , (^^^)
   )
 where
 
@@ -58,7 +59,7 @@ _ `xorB` _ = L
 notB L = H
 notB H = L
 
-data Clock = ClockUp Int | ClockDown Int
+data Clock = ClockUp String Int | ClockDown String Int
   deriving (Eq,Ord,Show)
 
 data Component i o = C 
@@ -95,3 +96,5 @@ component f initS clk = C { domain = Set.singleton clk
                                               in (o, component f s' clk)                                              
                           }
 
+(^^^) :: (s -> i -> (s,o)) -> s -> Component i o
+f ^^^ initS = component f initS (ClockUp "defaultClock" 1)

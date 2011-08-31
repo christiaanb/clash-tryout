@@ -4,11 +4,12 @@ where
 -- External Modules
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Error as Error
+import Control.Monad.Trans
 import qualified Data.Maybe as Maybe
 import Language.KURE
   
 -- GHC API
-import CoreSyn (Expr(..),Bind(..),AltCon(..))
+import CoreSyn (Expr(..),Bind(..))
 import qualified CoreSyn
 import qualified CoreUtils
 import qualified MkCore
@@ -21,9 +22,11 @@ import qualified Var
 -- Internal Modules
 import CLaSH.Desugar.Tools
 import CLaSH.Desugar.Types
+import CLaSH.Driver.Tools
 import CLaSH.Util
 import CLaSH.Util.Core
 import CLaSH.Util.Core.Transform
+import CLaSH.Util.Core.Types
 import CLaSH.Util.Pretty
 
 inlineArrowBndr :: DesugarStep
@@ -31,6 +34,17 @@ inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
   inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
     
 inlineArrowBndr c expr = fail "inlineArrowHooks"
+
+inlineCompLift :: DesugarStep
+inlineCompLift ctx expr@(Var liftComp) | (Name.getOccString liftComp) == "^^^" = do
+  bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr dsBindings liftComp
+  case bodyMaybe of
+    Just body -> do
+      bodyUniqued <- regenUniques ctx body
+      changed "inlineCompLift" bodyUniqued
+    Nothing -> fail "inlineCompLift"
+
+inlineCompLift ctx expr = fail "inlineCompLift"
 
 arrDesugar :: DesugarStep
 arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do

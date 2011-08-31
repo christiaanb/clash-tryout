@@ -4,4 +4,4 @@ module CLaSH.Netlist.Constants
 where
   
 builtinIds :: [String]
-builtinIds = ["xorB","andB","notB","arr","()","(,)","(,,)","delay","ClockUp","L","I#"]
+builtinIds = ["xorB","andB","notB","delay","I#","unpackCString#"]

@@ -14,8 +14,11 @@ import qualified Data.Label.PureM as Label
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSyn
+import qualified Id
 import qualified Name
 import qualified Var
 
@@ -44,7 +47,7 @@ getGlobalAndExtExpr ::
   -> CoreSyn.CoreBndr
   -> m (Maybe CoreSyn.CoreExpr)
 getGlobalAndExtExpr globalsLens bndr = do
-  case (nameToString $ Var.varName bndr) `elem` builtinIds of
+  case (nameToString $ Var.varName bndr) `elem` builtinIds || Id.isDataConWorkId bndr  of
     True -> return Nothing
     False -> do
       bindings <- fmap (Map.lookup bndr) $ Label.gets globalsLens

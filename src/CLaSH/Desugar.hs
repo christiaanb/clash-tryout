@@ -16,14 +16,20 @@ import Language.KURE (runRewrite)
 import Debug.Trace
 
 -- GHC API
+import qualified CoreFVs
 import qualified CoreSyn
+import qualified Id
+import qualified Var
+import qualified VarSet
 
 -- Internal Modules
 import CLaSH.Desugar.Strategy
 import CLaSH.Desugar.Types
 import CLaSH.Driver.Tools
 import CLaSH.Driver.Types
+import CLaSH.Netlist.Constants
 import CLaSH.Util
+import CLaSH.Util.Core
 import CLaSH.Util.Core.Types
 import CLaSH.Util.Core.Traverse (startContext)
 import CLaSH.Util.Pretty
@@ -37,7 +43,7 @@ desugar globals bndr = do
   ((retVal,tState),dState) <- State.liftIO $ 
       State.runStateT
         (State.runStateT 
-          (Error.runErrorT (desugar' bndr)) 
+          (Error.runErrorT (desugar' [bndr])) 
           (emptyTransformState uniqSupply)) 
         (emptyDesugarState globals)
   case retVal of
@@ -50,20 +56,23 @@ desugar globals bndr = do
       return $ trace ("Desugar transformations: " ++ show transformations) $ desugared `Map.union` globals
 
 desugar' ::
-  CoreSyn.CoreBndr
-  -> DesugarSession CoreSyn.CoreExpr
-desugar' bndr = do
+  [CoreSyn.CoreBndr]
+  -> DesugarSession [CoreSyn.CoreExpr]
+desugar' (bndr:bndrs) = do
   exprMaybe <- (lift . lift) $ getGlobalExpr dsBindings bndr
   case exprMaybe of
     Just expr -> do
       desugaredExpr <- makeCached bndr dsDesugared $ desugarExpr (show bndr) expr
-      return desugaredExpr
+      let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+                              (\v -> (not $ Id.isDictId v) && 
+                                     (not $ Id.isDataConWorkId v) && 
+                                     (nameToString $ Var.varName v) `notElem` builtinIds) 
+                              desugaredExpr
+      desugaredOthers <- desugar' (usedBndrs ++ bndrs)
+      return (desugaredExpr:desugaredOthers)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."
 
-desugarBndr
-  :: CoreSyn.CoreBndr
-  -> DesugarSession CoreSyn.CoreExpr
-desugarBndr bndr = desugar' bndr
+desugar' [] = return []
 
 desugarExpr
   :: String
@@ -72,6 +81,6 @@ desugarExpr
 desugarExpr bndrString expr = do
   rewritten <- runRewrite desugarStrategy startContext expr
   expr' <- case rewritten of
-    Right (expr',_,_) -> return expr'
+    Right (expr',_,_) -> trace bndrString return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
   return expr'

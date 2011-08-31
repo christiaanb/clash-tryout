@@ -58,8 +58,6 @@ mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create
       case builtinMaybe of
         (Just t) -> return t
         Nothing  -> case name of
-          "()"        -> return UnitType
-          "Clock"     -> return UnitType
           "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
           otherwise -> mkAdtHWType tyCon args
     Nothing -> Error.throwError ($(curLoc) ++ "Do not know how to make HWType out of type: " ++ pprString ty)
