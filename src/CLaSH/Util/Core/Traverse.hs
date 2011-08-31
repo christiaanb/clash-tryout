@@ -2,7 +2,8 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module CLaSH.Normalize.Traverse where
+module CLaSH.Util.Core.Traverse 
+where
 
 -- External Modules
 import Control.Monad
@@ -14,8 +15,11 @@ import qualified Language.KURE as KURE
 import qualified CoreSyn
 
 -- Internal Modules
-import CLaSH.Normalize.Types
+import CLaSH.Util.Core.Types
 import CLaSH.Util.Pretty
+
+startContext :: [CoreContext]
+startContext = []
 
 data CoreGeneric = CExpr CoreSyn.CoreExpr
                  | CBind CoreSyn.CoreBind
@@ -267,3 +271,7 @@ instance (Monad m) => Walker m [CoreContext] CoreGeneric where
   crushU rr = translate $ \e -> case e of
     CExpr s -> KURE.apply (crushU rr) s
     CBind s -> KURE.apply (crushU rr) s
+
+transformationStep step = rewrite $ \e -> do
+  c <- readEnvM
+  step c e

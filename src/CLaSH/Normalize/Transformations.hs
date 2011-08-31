@@ -21,18 +21,13 @@ module CLaSH.Normalize.Transformations
   , inlinenonrep
   , funSpec
   , inlineNonRepResult
-  , inlineArrowBndr
-  , arrowArrDesugar
-  , arrowReturnADesugar
-  , arrowFirstDesugar
-  , arrowHooksDesugar
-  , arrowComponentDesugar
   )
 where
 
 -- External Modules
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Error as Error
+import Control.Monad.Trans
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -59,11 +54,14 @@ import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe,normalizeBndr,desugarArrowExpr)
+import CLaSH.Driver.Tools
+import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util
 import CLaSH.Util.Core
+import CLaSH.Util.Core.Transform
+import CLaSH.Util.Core.Types
 import CLaSH.Util.Pretty
 
 ----------------------------------------------------------------
@@ -73,7 +71,7 @@ import CLaSH.Util.Pretty
 --------------------------------
 -- β-reduction
 --------------------------------
-betaReduce :: TransformationStep
+betaReduce :: NormalizeStep
 betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute bndr arg ctx expr >>= changed
                                          | otherwise        = substituteAndClone bndr arg ctx expr >>= changed
 
@@ -82,7 +80,7 @@ betaReduce ctx expr                                         = fail "beta"
 -- ==============================
 -- = Unused Let Binding Removal =
 -- ==============================
-letRemoveUnused :: TransformationStep
+letRemoveUnused :: NormalizeStep
 letRemoveUnused ctx expr@(Let (Rec binds) res) = do
     let binds' = filter doBind binds
     if (length binds /= length binds')
@@ -99,7 +97,7 @@ letRemoveUnused ctx expr = fail "letRemoveUnused"
 --------------------------------
 -- empty let removal
 --------------------------------
-letRemove :: TransformationStep
+letRemove :: NormalizeStep
 letRemove ctx (Let (Rec []) res) = changed res
 
 letRemove ctx expr               = fail "letRemove"
@@ -107,13 +105,13 @@ letRemove ctx expr               = fail "letRemove"
 -- ==============================
 -- = Simple Let Binding Removal =
 -- ==============================
-letRemoveSimple :: TransformationStep
+letRemoveSimple :: NormalizeStep
 letRemoveSimple = inlineBind "letRemoveSimple" (\(b,e) -> isLocalVar e)
 
 -- ====================
 -- = Cast Propagation =
 -- ====================
-castPropagation :: TransformationStep
+castPropagation :: NormalizeStep
 castPropagation ctx (Cast (Let binds expr) ty)       = changed $ Let binds (Cast expr ty)
 castPropagation ctx (Cast (Case scrut b ty alts) co) = changed $ Case scrut b (Coercion.applyCo ty co) alts'
   where
@@ -123,7 +121,7 @@ castPropagation ctx expr = fail "castPropagation"
 -- =======================
 -- = Cast Simplification =
 -- =======================
-castSimplification :: TransformationStep
+castSimplification :: NormalizeStep
 castSimplification ctx expr@(Cast val ty) = do
   localVar <- liftQ $ isLocalVar val
   repr <- liftQ $ isRepr val
@@ -139,7 +137,7 @@ castSimplification ctx expr = fail "castSimplification"
 -- ==============================
 -- = Top level binding inlining =
 -- ==============================
-inlineTopLevel :: TransformationStep
+inlineTopLevel :: NormalizeStep
 inlineTopLevel ctx@((LetBinding _):_) expr | not (isFun expr) =
   case (CoreSyn.collectArgs expr) of
     (Var f, args) -> do
@@ -155,7 +153,7 @@ inlineTopLevel ctx expr = fail "inlineTopLevel"
 
 needsInline :: CoreSyn.CoreBndr -> NormalizeSession (Maybe CoreSyn.CoreExpr)
 needsInline bndr = do
-  bodyMaybe <- getGlobalExpr bndr
+  bodyMaybe <- (lift . lift) $ getGlobalExpr nsBindings bndr
   case bodyMaybe of
     Nothing -> return Nothing
     Just body -> case CoreSyn.collectArgs body of
@@ -175,7 +173,7 @@ needsInline bndr = do
 --------------------------------
 -- η expansion
 --------------------------------
-etaExpand :: TransformationStep
+etaExpand :: NormalizeStep
 etaExpand (AppFirst:cs)  expr = fail "eta"
 
 etaExpand (AppSecond:cs) expr = fail "eta"
@@ -190,7 +188,7 @@ etaExpand ctx expr = fail "eta"
 --------------------------------
 -- Application propagation
 --------------------------------
-appProp :: TransformationStep
+appProp :: NormalizeStep
 appProp ctx (App (Let binds expr) arg)        = changed $ Let binds (App expr arg)
 
 appProp ctx (App (Case scrut b ty alts) arg)  = changed $ Case scrut b ty' alts'
@@ -203,7 +201,7 @@ appProp ctx expr                              = fail "appProp"
 --------------------------------
 -- Let recursification
 -------------------------------- 
-letRec :: TransformationStep
+letRec :: NormalizeStep
 letRec ctx (Let (NonRec bndr val) res) = changed $ Let (Rec [(bndr,val)]) res
 
 letRec ctx expr                        = fail "letRec"
@@ -211,7 +209,7 @@ letRec ctx expr                        = fail "letRec"
 --------------------------------
 -- let flattening
 --------------------------------
-letFlat :: TransformationStep
+letFlat :: NormalizeStep
 letFlat c topExpr@(Let (Rec binds) expr) = do
     let (binds',updated) = unzip $ map flatBind binds
     if (or updated) 
@@ -229,7 +227,7 @@ letFlat c expr = fail "letFlat"
 --------------------------------
 -- Return value simplification
 --------------------------------
-retValSimpl :: TransformationStep
+retValSimpl :: NormalizeStep
 retValSimpl ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet expr) = do
   localVar <- liftQ $ isLocalVar expr
   repr <- liftQ $ isRepr expr
@@ -255,7 +253,7 @@ retValSimpl ctx expr = fail "retValSimpl"
 --------------------------------
 -- Representable arguments simplification
 --------------------------------
-appSimpl :: TransformationStep
+appSimpl :: NormalizeStep
 appSimpl ctx expr@(App f arg) = do
   repr <- liftQ $ isRepr arg
   localVar <- liftQ $ isLocalVar arg
@@ -271,9 +269,9 @@ appSimpl ctx expr = fail "appSimpl"
 -- =======================
 -- = Function Extraction =
 -- =======================
-funExtract :: TransformationStep
+funExtract :: NormalizeStep
 funExtract ctx expr@(App _ _) | isVar fexpr = do
-    bodyMaybe <- liftQ $ getGlobalExpr f
+    bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr nsBindings f
     case bodyMaybe of
       Nothing -> do
         args' <- liftQ $ mapM doArg args
@@ -291,7 +289,7 @@ funExtract ctx expr@(App _ _) | isVar fexpr = do
       let freeVars = VarSet.varSetElems $ CoreFVs.exprFreeVars arg
       let body     = MkCore.mkCoreLams freeVars arg
       funId <- mkBinderFor body "fun"
-      addGlobalBind funId body
+      (lift . lift) $ addGlobalBind nsBindings funId body
       return $ (True, MkCore.mkCoreApps (Var funId) (map Var freeVars))
     doArg arg = return (False, arg)
 
@@ -305,7 +303,7 @@ funExtract ctx expr = fail "funExtract"
 -- ============================
 -- = Scrutinee simplification =
 -- ============================
-scrutSimpl :: TransformationStep
+scrutSimpl :: NormalizeStep
 scrutSimpl c expr@(Case scrut b ty alts) = do
   repr <- liftQ $ isRepr scrut
   localVar <- liftQ $ isLocalVar scrut
@@ -321,7 +319,7 @@ scrutSimpl ctx expr = fail "scrutSimpl"
 -- ============================
 -- = Scrutinee Binder Removal =
 -- ============================
-scrutBndrRemove :: TransformationStep
+scrutBndrRemove :: NormalizeStep
 scrutBndrRemove ctx (Case (Var scrut) bndr ty alts) | bndrUsed = do
     alts' <- mapM substBndrAlt alts
     changed $ Case (Var scrut) wild ty alts'
@@ -338,7 +336,7 @@ scrutBndrRemove ctx expr = fail "scrutBndrRemove"
 --------------------------------
 -- Case normalization
 --------------------------------
-caseSimpl :: TransformationStep
+caseSimpl :: NormalizeStep
 caseSimpl ctx expr@(Case scrut b ty [(cont, bndrs, Var x)]) = fail "caseSimpl"
 
 caseSimpl ctx topExpr@(Case scrut bndr ty alts) | not bndrUsed = do
@@ -406,7 +404,7 @@ caseSimpl ctx expr = fail "caseSimpl"
 -- ================
 -- = Case Removal =
 -- ================
-caseRemove :: TransformationStep
+caseRemove :: NormalizeStep
 caseRemove ctx (Case scrut b ty [(con,bndrs,expr)]) | not usesVars = changed expr
   where
     usesVars = exprUsesBinders (b:bndrs) expr
@@ -415,7 +413,7 @@ caseRemove ctx expr = fail "caseRemove"
 -- ============================================
 -- = Case of Known Constructor Simplification =
 -- ============================================
-knownCase :: TransformationStep
+knownCase :: NormalizeStep
 knownCase ctx expr@(Case scrut@(App _ _) bndr ty alts) | not bndrUsed = do
     case CoreSyn.collectArgs scrut of
       (Var f, args) -> case Id.isDataConId_maybe f of
@@ -445,15 +443,15 @@ knownCase ctx expr = fail "knownCase"
 -- ======================================
 -- = Non-representable binding inlining =
 -- ======================================
-inlinenonrep :: TransformationStep
+inlinenonrep :: NormalizeStep
 inlinenonrep = inlineBind "inlinenonrep" (fmap not . isRepr . snd)
 
 -- ===========================
 -- = Function Specialization =
 -- ===========================
-funSpec :: TransformationStep
+funSpec :: NormalizeStep
 funSpec ctx expr@(App _ _) | isVar fexpr = do
-    bodyMaybe <- liftQ $ getGlobalExpr f
+    bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr nsBindings f
     case bodyMaybe of
       Just body -> do
         (args',updated) <- fmap unzip $ liftQ $ mapM doArg args
@@ -476,7 +474,7 @@ funSpec ctx expr@(App _ _) | isVar fexpr = do
     doArg :: CoreSyn.CoreExpr -> NormalizeSession (([CoreSyn.CoreExpr], [CoreSyn.CoreBndr], CoreSyn.CoreExpr), Bool)
     doArg arg = do
       repr <- isRepr arg
-      bndrs <- fmap (Map.keys) $ Label.gets nsBindings
+      bndrs <- fmap (Map.keys) $ (lift . lift) $ Label.gets nsBindings
       let interesting var = Var.isLocalVar var && (var `notElem` bndrs)
       if (not repr) && (not (isVar arg && interesting (exprToVar arg))) && (not (hasFreeTyVars arg))
         then do
@@ -491,7 +489,7 @@ funSpec ctx expr = fail "funSpec"
 -- =====================================
 -- = Non-representable result inlining =
 -- =====================================
-inlineNonRepResult :: TransformationStep
+inlineNonRepResult :: NormalizeStep
 inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr) = do
   case CoreSyn.collectArgs expr of
     (Var f, args) | not (Id.isDictId f) -> do
@@ -506,7 +504,7 @@ inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr
                 then
                   fail "inlineNonRepResult"
                 else do
-                  globalBndrs <- fmap (Map.keys) $ liftQ $ Label.gets nsBindings
+                  globalBndrs <- fmap (Map.keys) $ liftQ $ (lift . lift) $ Label.gets nsBindings
                   let interesting var = Var.isLocalVar var && (var `notElem` globalBndrs)
                   let freeVars = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars interesting res
                   let freeVarTypes = map Id.idType freeVars
@@ -532,143 +530,3 @@ inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr
     _ -> fail "inlineNonRepResult"
 
 inlineNonRepResult c expr = fail "inlineNonRepResult"
-
--- ====================
--- = Arrow desugaring =
--- ====================
-
-inlineArrowBndr :: TransformationStep
-inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
-  inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
-    
-inlineArrowBndr c expr = fail "inlineArrowHooks"
-
-arrowArrDesugar :: TransformationStep
-arrowArrDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString f) == "arr" && (not $ isApplicable expr) = do
-    let [liftedFun] = getValArgs (Var.varType f) alreadyMappedArgs
-    let [argTy]   = (fst . Type.splitFunTys . CoreUtils.exprType) liftedFun
-    paramId <- liftQ $ mkInternalVar "param" argTy
-    let liftedFunApp  = App liftedFun (Var paramId)
-    let desugaredExpr = Lam paramId liftedFunApp
-    changed desugaredExpr
-  where
-    (fexpr, alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var f)                    = fexpr
-  
-arrowArrDesugar ctx expr = fail "arrowArrDesugar"
-
-arrowReturnADesugar :: TransformationStep
-arrowReturnADesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString f) == "returnA" && (not $ isApplicable expr) = do
-    case ((Type.splitTyConApp_maybe . CoreUtils.exprType) expr) of
-      Nothing -> liftQ $ Error.throwError $ $(curLoc) ++ "returnA?\n" ++ pprString expr ++ "\n" ++ pprString (CoreUtils.exprType expr)
-      Just arrType -> do
-        -- Create 2 new Vars of which the 2nd is of the value type of the arrow
-        let argTy = (head . snd) arrType
-        paramId <- liftQ $ mkInternalVar "param" argTy
-        -- Return the extracted expression 
-        let packinps = Var paramId
-        changed $ Lam paramId packinps
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var f)                   = fexpr
-    
-arrowReturnADesugar ctx expr = fail "arrowReturnADesugar"
-
-desugarSubExpression f = do
-  if isArrowExpression f
-    then do
-      case f of
-        (Var bndr) -> do
-          realFExpr <- liftQ $ normalizeBndr False bndr
-          let realFExprType = CoreUtils.exprType realFExpr
-          return (Var $ Var.setVarType bndr realFExprType)
-        otherwise -> liftQ $ desugarArrowExpr "first" f 
-    else
-      return f
-
-arrowHooksDesugar :: TransformationStep
-arrowHooksDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString hooks) == ">>>" && (not $ isApplicable expr) = do
-    let [f,g] = getValArgs (Var.varType hooks) alreadyMappedArgs
-    realF <- desugarSubExpression f
-    realG <- desugarSubExpression g
-    let [fSplit,gSplit] = map (Type.splitFunTys . CoreUtils.exprType) [realF,realG]
-    [([fInpTy], fResTy),([gInpTy], gResTy)] <- case [fSplit,gSplit] of {
-        ; [([fInpTy], fResTy),([gInpTy], gResTy)] -> return [([fInpTy], fResTy),([gInpTy], gResTy)]
-        ; x -> liftQ $ Error.throwError $ $(curLoc) ++ "Unexpected Arrow Type:\n" ++ pprString expr
-        }
-    betaId <- liftQ $ mkInternalVar "betaHooks" fInpTy
-    gammaId <- liftQ $ mkInternalVar "gammaHooks" gInpTy
-    deltaId <- liftQ $ mkInternalVar "deltaHooks" gResTy
-    let letexprs = Rec [ (gammaId, (App realF (Var betaId)))
-                       , (deltaId, (App realG (Var gammaId)))
-                       ]
-    let letExpression = MkCore.mkCoreLets [letexprs] (Var deltaId)       
-    changed (Lam betaId letExpression)
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var hooks)               = fexpr
-
-arrowHooksDesugar ctx expr = fail "arrowHooksDesugar"
-
-arrowFirstDesugar :: TransformationStep
-arrowFirstDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString first) == "first" && (not $ isApplicable expr) = do
-    let deltaTy = (last . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(1)")) . Type.splitTyConApp_maybe . head . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(0)")) . Type.splitTyConApp_maybe . CoreUtils.exprType) expr
-    -- let gammaTy = (head . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (gamma)(1)")) . Type.splitTyConApp_maybe . last . snd . (Maybe.fromMaybe $ (error "arrowFirstExtract (delta)(0)")) . Type.splitTyConApp_maybe . CoreUtils.exprType) expr
-    -- Retreive the packed functions     
-    let [f] = getValArgs (Var.varType first) alreadyMappedArgs
-    realF <- desugarSubExpression f
-    let ([betaTy], gammaTy) = (Type.splitFunTys . CoreUtils.exprType) realF
-    let inputTy = TysWiredIn.mkBoxedTupleTy [betaTy,deltaTy]
-    inputId <- liftQ $ mkInternalVar "inputFirst" inputTy
-    -- Unpack input into input for function f and delta
-    betaScrutId <- liftQ $ mkInternalVar "betaScrutFirst" betaTy
-    deltaScrutId <- liftQ $ mkInternalVar "deltaScrutFirst" deltaTy
-    betaId <- liftQ $ mkInternalVar "betaFirst" betaTy
-    deltaId <- liftQ $ mkInternalVar "deltaFirst" deltaTy
-    let unpackBeta = MkCore.mkSmallTupleSelector [betaScrutId,deltaScrutId] betaScrutId (MkCore.mkWildValBinder inputTy) (Var inputId)
-    let unpackDelta = MkCore.mkSmallTupleSelector [betaScrutId,deltaScrutId] deltaScrutId (MkCore.mkWildValBinder inputTy) (Var inputId)
-    -- Retreive the output of f
-    gammaId <- liftQ $ mkInternalVar "gammaFirst" gammaTy
-    -- Pack the result of f and delta
-    let resPack = MkCore.mkCoreTup [Var gammaId, Var deltaId]
-    gammaDeltaTPId <- liftQ $ mkInternalVar "gammaDeltaFirst" (CoreUtils.exprType resPack)
-    let letexprs = Rec [ (betaId, unpackBeta)
-                       , (deltaId, unpackDelta)
-                       , (gammaId, App realF (Var betaId))
-                       , (gammaDeltaTPId, resPack)
-                       ]
-    let letExpression = MkCore.mkCoreLets [letexprs] (Var gammaDeltaTPId)   
-    changed (Lam inputId letExpression) 
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var first)               = fexpr
-
-arrowFirstDesugar ctx expr = fail "arrowFirstDesugar"
-
-arrowComponentDesugar :: TransformationStep
-arrowComponentDesugar ctx expr@(App _ _) | isVar fexpr && (Name.getOccString component) == "component" && (not $ isApplicable expr) = do
-    let [f,initS,clockDom]          = getValArgs (Var.varType component) alreadyMappedArgs
-    let ([fStateTy,fInpTy], fResTy) = (Type.splitFunTys . CoreUtils.exprType) f
-    let (_,[_,fOutpTy])             = Type.splitAppTys fResTy
-    inputId                         <- liftQ $ mkInternalVar "componentInput"   fInpTy
-    outputId                        <- liftQ $ mkInternalVar "componentOutput"  fOutpTy
-    outputScrutId                   <- liftQ $ mkInternalVar "componentOutputS" fOutpTy
-    resId                           <- liftQ $ mkInternalVar "componentResult"  fResTy
-    stateId                         <- liftQ $ mkInternalVar "componentState"   fStateTy
-    statePrimeId                    <- liftQ $ mkInternalVar "componentStateP"  fStateTy
-    statePrimeScrutId               <- liftQ $ mkInternalVar "componentStatePS" fStateTy
-    let unpackStatePrime            = MkCore.mkSmallTupleSelector [statePrimeScrutId,outputScrutId] statePrimeScrutId (MkCore.mkWildValBinder fResTy) (Var resId)
-    let unpackOutput                = MkCore.mkSmallTupleSelector [statePrimeScrutId,outputScrutId] outputScrutId     (MkCore.mkWildValBinder fResTy) (Var resId)
-    delayFunc                       <- liftQ $ mkDelay [initS,clockDom]
-    let letBndrs                    = Rec [ (resId       , MkCore.mkCoreApps f [Var stateId, Var inputId])
-                                          , (statePrimeId, unpackStatePrime)
-                                          , (outputId    , unpackOutput)
-                                          , (stateId     , MkCore.mkCoreApps (Var delayFunc) [initS,clockDom, Var statePrimeId])
-                                          ]
-    let letExpression               = MkCore.mkCoreLets [letBndrs] (Var outputId)
-    changed (Lam inputId letExpression)
-  where
-    (fexpr,alreadyMappedArgs) = CoreSyn.collectArgs expr
-    (Var component)               = fexpr
-
-arrowComponentDesugar ctx expr = fail "arrowComponentDesugar"

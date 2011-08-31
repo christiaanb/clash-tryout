@@ -12,10 +12,12 @@ import Data.Label.PureM
 -- GHC.API
 import qualified CoreSyn
 import qualified HscTypes
+import qualified UniqSupply
 
 -- Internal Modules
 import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
+import CLaSH.Desugar (desugar)
 import CLaSH.Normalize (normalize)
 import CLaSH.Util.Pretty
 import CLaSH.Util.GHC (loadModules)
@@ -30,10 +32,11 @@ generateVHDL modName = do
     let topEntities = filter (isTopEntity . fst) allBindings
     case topEntities of
       [topEntity] -> do
-        puts tsBindings $ Map.fromList allBindings
-        normalized <- normalize (Map.fromList allBindings) (fst topEntity)
+        let globalBindings = Map.fromList allBindings
+        globalBindings' <- desugar globalBindings    (fst topEntity)
+        normalized      <- normalize globalBindings' (fst topEntity)
         return normalized
-      []          -> $(errorCurLoc "No 'topEntity' found")
+      []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
   putStrLn $ pprString vhdl
@@ -41,4 +44,5 @@ generateVHDL modName = do
 
 runDriverSession :: DriverSession a -> IO a
 runDriverSession session = do
-  State.evalStateT session emptyDriverState
+  uniqSupply <- State.liftIO $ UniqSupply.mkSplitUniqSupply 'z'
+  State.evalStateT session (emptyDriverState uniqSupply)

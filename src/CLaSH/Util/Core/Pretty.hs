@@ -15,7 +15,7 @@ import qualified Outputable
 import qualified Var
 
 -- Internal Modules
-import CLaSH.Util.Core.Show
+import CLaSH.Util.Core.Show ()
 
 instance (OutputableBndr b, Show b) => Pretty (CoreSyn.Expr b) where
   pPrint = Pretty.text . show

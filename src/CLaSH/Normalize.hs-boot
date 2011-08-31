@@ -12,13 +12,3 @@ normalizeBndr
   :: Bool
   -> CoreSyn.CoreBndr
   -> NormalizeSession CoreSyn.CoreExpr
-
-normalizeExpr
-  :: String
-  -> CoreSyn.CoreExpr
-  -> NormalizeSession CoreSyn.CoreExpr
-
-desugarArrowExpr
-  :: String
-  -> CoreSyn.CoreExpr
-  -> NormalizeSession CoreSyn.CoreExpr

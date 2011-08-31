@@ -3,17 +3,17 @@ module CLaSH.Normalize
   ( normalize
   , normalizeMaybe
   , normalizeBndr
-  , normalizeExpr
-  , desugarArrowExpr
   )
 where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
 import qualified Control.Monad.State as State
+import Control.Monad.Trans
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Label as Label
+import qualified Data.Label.PureM as LabelM
 import Language.KURE (runRewrite)
 
 import Debug.Trace
@@ -28,7 +28,8 @@ import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import CLaSH.Driver.Types (DriverSession)
+import CLaSH.Driver.Types
+import CLaSH.Driver.Tools
 import CLaSH.Netlist.Constants
 import CLaSH.Netlist.Types
 import CLaSH.Normalize.Tools
@@ -36,36 +37,39 @@ import CLaSH.Normalize.Types
 import CLaSH.Normalize.Strategy
 import CLaSH.Util
 import CLaSH.Util.Core
+import CLaSH.Util.Core.Types
+import CLaSH.Util.Core.Traverse (startContext)
 import CLaSH.Util.Pretty
 
 normalize
   :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   -> CoreSyn.CoreBndr
   -> DriverSession (Map CoreSyn.CoreBndr CoreSyn.CoreExpr)
-normalize binderMap bndr = do
-  uniqSupply <- State.liftIO $ UniqSupply.mkSplitUniqSupply 'z'
-  let initState = Label.set nsBindings binderMap (emptyNormalizeState uniqSupply)
-  (retVal,nState) <- State.liftIO $ State.runStateT (Error.runErrorT (normalize' False [bndr])) initState
+normalize globals bndr = do
+  uniqSupply <- LabelM.gets drUniqSupply
+  ((retVal,tState),nState) <- State.liftIO $ 
+      State.runStateT
+        (State.runStateT 
+          (Error.runErrorT (normalize' False [bndr])) 
+          (emptyTransformState uniqSupply)) 
+        (emptyNormalizeState globals)
   case retVal of
-    Left errMsg -> error errMsg
-    Right r     -> return $ Label.get nsNormalized nState
+    Left  errMsg -> error errMsg
+    Right _ -> do
+      let uniqSupply' = Label.get tsUniqSupply tState
+      let normalized  = Label.get nsNormalized nState
+      LabelM.puts drUniqSupply uniqSupply'
+      return normalized
 
 normalize'
   :: Bool
   -> [CoreSyn.CoreBndr]
   -> NormalizeSession [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
 normalize' nonRepr (bndr:bndrs) = do
-  exprMaybe <- getGlobalExpr bndr
+  exprMaybe <- (lift . lift) $ getGlobalExpr nsBindings bndr
   case exprMaybe of
-    Just expr' -> do
-      (normalizable,expr) <- if (isArrowBinder bndr)
-        then do
-          desugaredExpr <- desugarArrowExpr (show bndr) expr'
-          normalizable  <- isNormalizableE nonRepr desugaredExpr
-          return (normalizable,desugaredExpr)
-        else do
-          normalizable <- isNormalizable nonRepr bndr
-          return (normalizable,expr')
+    Just expr -> do
+      normalizable <- isNormalizableE nonRepr expr
       if not normalizable
         then
           Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not normalizable (" ++ show (CoreUtils.exprType expr) ++ "):\n" ++ pprString expr
@@ -74,7 +78,6 @@ normalize' nonRepr (bndr:bndrs) = do
             normalizeExpr (show bndr) expr
           let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars (\v -> (not $ Id.isDictId v) && (nameToString $ Var.varName v) `notElem` builtinIds) normalizedExpr
           normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
-          let normalizedOthers = []
           return ((bndr,normalizedExpr):normalizedOthers)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."
 
@@ -87,7 +90,7 @@ normalizeMaybe
 normalizeMaybe nonRepr bndr = do
   normBinds <- (normalize' nonRepr [bndr]) `Error.catchError` (\_ -> return [])
   case normBinds of
-    [] -> return Nothing
+    []           -> return Nothing
     (normBind:_) -> return (Just normBind)
 
 normalizeBndr
@@ -97,17 +100,6 @@ normalizeBndr
 normalizeBndr nonRepr bndr = do
   normBinds <- normalize' nonRepr [bndr]
   return $ snd $ head normBinds
-
-desugarArrowExpr
-  :: String
-  -> CoreSyn.CoreExpr
-  -> NormalizeSession CoreSyn.CoreExpr
-desugarArrowExpr bndr expr = do
-  rewritten <- runRewrite arrowDesugarStrategy startContext expr
-  expr' <- case rewritten of
-    Right (expr',_,_) -> return expr'
-    Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
-  return expr'
 
 normalizeExpr
   :: String

@@ -8,14 +8,15 @@ import Data.Map (Map,empty)
 
 -- GHC API
 import qualified CoreSyn
+import qualified UniqSupply
 
 data DriverState = DriverState
-  { _tsBindings :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  { _drUniqSupply :: UniqSupply.UniqSupply
   }
 
 -- Derive record field accessors
 Data.Label.mkLabels [''DriverState]
 
-emptyDriverState = DriverState empty
+emptyDriverState uniqSupply = DriverState uniqSupply
 
 type DriverSession = StateT DriverState IO

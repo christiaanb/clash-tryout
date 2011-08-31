@@ -13,7 +13,8 @@ import qualified GHC
 import qualified HscTypes
 import qualified Panic
 
-curModName = "CLaSH.Util.GHC.LoadModules: "
+-- Internal Modules
+import CLaSH.Util (curLoc)
 
 loadModules :: String -> IO [HscTypes.ModGuts]
 loadModules modName =
@@ -32,7 +33,7 @@ loadModules modName =
                                 GHC.typecheckModule >>=
                                 GHC.desugarModule) modGraph'
           return $ map GHC.coreModule desugardMods
-        GHC.Failed -> Panic.pgmError $ curModName ++ "failed to load module: " ++ modName
+        GHC.Failed -> Panic.pgmError $ $(curLoc) ++ "failed to load module: " ++ modName
 
 parseModule :: GHC.GhcMonad m => GHC.ModSummary -> m GHC.ParsedModule
 parseModule modSum = do

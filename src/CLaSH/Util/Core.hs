@@ -1,10 +1,11 @@
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE FlexibleContexts     #-}
 module CLaSH.Util.Core where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
+import qualified Data.Label.PureM as Label
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 
@@ -14,12 +15,16 @@ import qualified CoreFVs
 import qualified CoreSyn
 import qualified CoreUtils
 import qualified Id
+import qualified IdInfo
+import qualified Module
 import qualified Name
 import qualified OccName
 import qualified Outputable
+import qualified SrcLoc
 import qualified TcType
 import qualified TyCon
 import qualified Type
+import qualified UniqSupply
 import qualified Var
 import qualified VarSet
 
@@ -130,4 +135,3 @@ getValArgs ty args = drop n args
     deepSplitSigmaTy ty = case TcType.tcSplitSigmaTy ty of
       r@([],[],ty') -> ([],[],ty')
       (tyvars, predtypes, ty') -> let (tyvars', predtypes', ty'') = TcType.tcSplitSigmaTy ty' in (tyvars ++ tyvars', predtypes ++ predtypes', ty'')
-
