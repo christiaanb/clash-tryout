@@ -1,25 +1,52 @@
 module CLaSH.Normalize.Transformations
-  ( betaReduce
+  ( 
+  -- * Cleanup transformations
+  -- ** Beta-reduction
+    betaReduce
+  -- ** Unused Let Binding Removal  
   , letRemoveUnused
+  -- ** Empty let removal
   , letRemove
+  -- ** Simple Let Binding Removal
   , letRemoveSimple
+  -- ** Cast Propagation
   , castPropagation
+  -- ** Cast Simplification
   , castSimplification
+  -- ** Top level binding inlining
   , inlineTopLevel
+  -- * Program structure transformations
+  -- ** Eta-expansion
   , etaExpand
+  -- ** Application propagation
   , appProp
+  -- ** Let recursification
   , letRec
+  -- ** let flattening
   , letFlat
+  -- ** Return value simplification
   , retValSimpl
+  -- ** Representable arguments simplification
   , appSimpl
+  -- ** Function Extraction
   , funExtract
+  -- * Case normalization transformations
+  -- ** Scrutinee simplification
   , scrutSimpl
+  -- ** Scrutinee Binder Removal
   , scrutBndrRemove
+  -- ** Case normalization
   , caseSimpl
+  -- ** Case Removal
   , caseRemove
+  -- ** Case of Known Constructor Simplification
   , knownCase
+  -- * Unrepresentable value removal transformations
+  -- ** Non-representable binding inlining
   , inlinenonrep
+  -- ** Function Specialization
   , funSpec
+  -- ** Non-representable result inlining
   , inlineNonRepResult
   )
 where
@@ -27,12 +54,12 @@ where
 -- External Modules
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Error as Error
-import Control.Monad.Trans
+import Control.Monad.Trans (lift)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Label.PureM as Label
-import Language.KURE
+import Language.KURE (liftQ)
 
 -- GHC API
 import qualified BasicTypes
@@ -44,40 +71,30 @@ import qualified CoreUtils
 import qualified DataCon
 import qualified Id
 import qualified MkCore
-import qualified Name
-import qualified TcType
 import qualified Type
 import qualified TysWiredIn
 import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import CLaSH.Driver.Tools
+import CLaSH.Driver.Tools (getGlobalExpr,addGlobalBind)
 import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
-import CLaSH.Util
-import CLaSH.Util.Core
-import CLaSH.Util.Core.Transform
-import CLaSH.Util.Core.Types
-import CLaSH.Util.Pretty
+import CLaSH.Util (curLoc)
+import CLaSH.Util.Core ( CoreBinding, hasFreeTyVars, isApplicable, isVar
+  , exprToVar, exprUsesBinders,isFun,isLam,isLet,viewVarOrApp,dataconIndex)
+import CLaSH.Util.Core.Transform (regenUniques, changed, inlineBind
+  , substitute, mkInternalVar, substituteAndClone)
+import CLaSH.Util.Core.Types (CoreContext(..))
+import CLaSH.Util.Pretty (pprString)
 
-----------------------------------------------------------------
--- Cleanup transformations
-----------------------------------------------------------------
-
---------------------------------
--- β-reduction
---------------------------------
 betaReduce :: NormalizeStep
 betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute         bndr arg ctx expr >>= (changed "beta")
                                          | otherwise        = substituteAndClone bndr arg ctx expr >>= (changed "beta")
 
 betaReduce ctx expr                                         = fail "beta"
 
--- ==============================
--- = Unused Let Binding Removal =
--- ==============================
 letRemoveUnused :: NormalizeStep
 letRemoveUnused ctx expr@(Let (Rec binds) res) = do
     let binds' = filter doBind binds
@@ -91,24 +108,18 @@ letRemoveUnused ctx expr@(Let (Rec binds) res) = do
     doBind (bndr,_) = any (exprUsesBinders [bndr]) (res:boundExprs)
 
 letRemoveUnused ctx expr = fail "letRemoveUnused"
-    
---------------------------------
--- empty let removal
---------------------------------
+
+-- | Remove empty (recursive) lets
 letRemove :: NormalizeStep
 letRemove ctx (Let (Rec []) res) = changed "letRemove" res
 
 letRemove ctx expr               = fail "letRemove"
 
--- ==============================
--- = Simple Let Binding Removal =
--- ==============================
+-- | Remove a = b bindings from let expressions everywhere
 letRemoveSimple :: NormalizeStep
 letRemoveSimple = inlineBind "letRemoveSimple" (\(b,e) -> isLocalVar e)
 
--- ====================
--- = Cast Propagation =
--- ====================
+-- | Try to move casts as much downward as possible.
 castPropagation :: NormalizeStep
 castPropagation ctx (Cast (Let binds expr) ty)       = changed "castPropagation" $ Let binds (Cast expr ty)
 castPropagation ctx (Cast (Case scrut b ty alts) co) = changed "castPropagation" $ Case scrut b (Coercion.applyCo ty co) alts'
@@ -116,9 +127,8 @@ castPropagation ctx (Cast (Case scrut b ty alts) co) = changed "castPropagation"
     alts' = map (\(con,bndrs,expr) -> (con,bndrs, Cast expr co)) alts
 castPropagation ctx expr = fail "castPropagation"
 
--- =======================
--- = Cast Simplification =
--- =======================
+-- | Mostly useful for state packing and unpacking, but
+-- perhaps for others as well.
 castSimplification :: NormalizeStep
 castSimplification ctx expr@(Cast val ty) = do
   localVar <- liftQ $ isLocalVar val
@@ -132,9 +142,40 @@ castSimplification ctx expr@(Cast val ty) = do
       
 castSimplification ctx expr = fail "castSimplification"
 
--- ==============================
--- = Top level binding inlining =
--- ==============================
+{- | 
+This transformation inlines simple top level bindings. Simple
+currently means that the body is only a single application (though
+the complexity of the arguments is not currently checked) or that the
+normalized form only contains a single binding. This should catch most of the
+cases where a top level function is created that simply calls a type class
+method with a type and dictionary argument, e.g.
+
+@
+  fromInteger = GHC.Num.fromInteger (SizedWord D8) $dNum
+@
+
+which is later called using simply
+
+@
+  fromInteger (smallInteger 10)
+@
+
+These useless wrappers are created by GHC automatically. If we don't
+inline them, we get loads of useless components cluttering the
+generated VHDL.
+
+Note that the inlining could also inline simple functions defined by
+the user, not just GHC generated functions. It turns out to be near
+impossible to reliably determine what functions are generated and
+what functions are user-defined. Instead of guessing (which will
+inline less than we want) we will just inline all simple functions.
+
+Only functions that are actually completely applied and bound by a
+variable in a let expression are inlined. These are the expressions
+that will eventually generate instantiations of trivial components.
+By not inlining any other reference, we also prevent looping problems
+with funextract and inlinedict.
+-}
 inlineTopLevel :: NormalizeStep
 inlineTopLevel ctx@((LetBinding _):_) expr | not (isFun expr) =
   case (CoreSyn.collectArgs expr) of
@@ -164,13 +205,14 @@ needsInline bndr = do
             (args, [bind], Var res) -> return $ Just normExpr
             _ -> return Nothing
 
-----------------------------------------------------------------
--- Program structure transformations
-----------------------------------------------------------------
-
---------------------------------
--- η expansion
---------------------------------
+{- |
+Make sure all parameters to the normalized functions are named by top
+level lambda expressions. For this we apply η expansion to the
+function body (possibly enclosed in some lambda abstractions) while
+it has a function type. Eventually this will result in a function
+body consisting of a bunch of nested lambdas containing a
+non-function value (e.g., a complete application).
+-}
 etaExpand :: NormalizeStep
 etaExpand (AppFirst:cs)  expr = fail "eta"
 
@@ -183,9 +225,7 @@ etaExpand ctx expr | isFun expr && not (isLam expr) = do
 
 etaExpand ctx expr = fail "eta"
 
---------------------------------
--- Application propagation
---------------------------------
+-- | Move applications into let and case expressions.
 appProp :: NormalizeStep
 appProp ctx (App (Let binds expr) arg)        = changed "appProp" $ Let binds (App expr arg)
 
@@ -196,17 +236,27 @@ appProp ctx (App (Case scrut b ty alts) arg)  = changed "appProp" $ Case scrut b
     
 appProp ctx expr                              = fail "appProp"
 
---------------------------------
--- Let recursification
--------------------------------- 
+-- | Make all lets recursive, so other transformations don't need to
+-- handle non-recursive lets
 letRec :: NormalizeStep
 letRec ctx (Let (NonRec bndr val) res) = changed "letRec" $ Let (Rec [(bndr,val)]) res
 
 letRec ctx expr                        = fail "letRec"
 
---------------------------------
--- let flattening
---------------------------------
+{- | 
+Takes a let that binds another let, and turns that into two nested lets.
+e.g., from:
+
+@
+let b = (let b' = expr' in res') in res
+@
+
+to:
+
+@
+let b' = expr' in (let b = res' in res)
+@
+-}
 letFlat :: NormalizeStep
 letFlat c topExpr@(Let (Rec binds) expr) = do
     let (binds',updated) = unzip $ map flatBind binds
@@ -222,9 +272,13 @@ letFlat c topExpr@(Let (Rec binds) expr) = do
 
 letFlat c expr = fail "letFlat"
 
---------------------------------
--- Return value simplification
---------------------------------
+{- |
+Ensure the return value of a function follows proper normal form. eta
+expansion ensures the body starts with lambda abstractions, this
+transformation ensures that the lambda abstractions always contain a
+recursive let and that, when the return value is representable, the
+let contains a local variable reference in its body.
+-}
 retValSimpl :: NormalizeStep
 retValSimpl ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet expr) = do
   localVar <- liftQ $ isLocalVar expr
@@ -248,9 +302,7 @@ retValSimpl ctx expr@(Let (Rec binds) body) | all isLambdaBodyCtx ctx = do
 
 retValSimpl ctx expr = fail "retValSimpl"
 
---------------------------------
--- Representable arguments simplification
---------------------------------
+-- | Make sure that all arguments of a representable type are simple variables.
 appSimpl :: NormalizeStep
 appSimpl ctx expr@(App f arg) = do
   repr <- liftQ $ isRepr arg
@@ -264,9 +316,13 @@ appSimpl ctx expr@(App f arg) = do
 
 appSimpl ctx expr = fail "appSimpl"
 
--- =======================
--- = Function Extraction =
--- =======================
+{- | 
+This transform takes any function-typed argument that cannot be propagated
+(because the function that is applied to it is a builtin function), and
+puts it in a brand new top level binder. This allows us to for example
+apply map to a lambda expression This will not conflict with inlinenonrep,
+since that only inlines local let bindings, not top level bindings.
+-}
 funExtract :: NormalizeStep
 funExtract ctx expr@(App _ _) | isVar fexpr = do
     bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr nsBindings f
@@ -293,14 +349,8 @@ funExtract ctx expr@(App _ _) | isVar fexpr = do
 
 funExtract ctx expr = fail "funExtract"
 
-
-----------------------------------------------------------------
--- Case normalization transformations
-----------------------------------------------------------------
-
--- ============================
--- = Scrutinee simplification =
--- ============================
+-- | Make sure the scrutinee of a case expression is a local variable
+-- reference.
 scrutSimpl :: NormalizeStep
 scrutSimpl c expr@(Case scrut b ty alts) = do
   repr <- liftQ $ isRepr scrut
@@ -314,9 +364,13 @@ scrutSimpl c expr@(Case scrut b ty alts) = do
 
 scrutSimpl ctx expr = fail "scrutSimpl"
 
--- ============================
--- = Scrutinee Binder Removal =
--- ============================
+{- |
+A case expression can have an extra binder, to which the scrutinee is bound
+after bringing it to WHNF. This is used for forcing evaluation of strict
+arguments. Since strictness does not matter for us (rather, everything is
+sort of strict), this binder is ignored when generating VHDL, and must thus
+be wild in the normal form.
+-}
 scrutBndrRemove :: NormalizeStep
 scrutBndrRemove ctx (Case (Var scrut) bndr ty alts) | bndrUsed = do
     alts' <- mapM substBndrAlt alts
@@ -331,9 +385,14 @@ scrutBndrRemove ctx (Case (Var scrut) bndr ty alts) | bndrUsed = do
 
 scrutBndrRemove ctx expr = fail "scrutBndrRemove"
 
---------------------------------
--- Case normalization
---------------------------------
+{- |
+Turn a case expression with any number of alternatives with any
+number of non-wild binders into as set of case and let expressions,
+all of which are in normal form (e.g., a bunch of extractor case
+expressions to extract all fields from the scrutinee, a number of let
+bindings to bind each alternative and a single selector case to
+select the right value.
+-}
 caseSimpl :: NormalizeStep
 caseSimpl ctx expr@(Case scrut b ty [(cont, bndrs, Var x)]) = fail "caseSimpl"
 
@@ -399,18 +458,22 @@ caseSimpl ctx topExpr@(Case scrut bndr ty alts) | not bndrUsed = do
               
 caseSimpl ctx expr = fail "caseSimpl"
 
--- ================
--- = Case Removal =
--- ================
+-- | Remove case statements that have only a single alternative and only wild
+-- binders.
 caseRemove :: NormalizeStep
 caseRemove ctx (Case scrut b ty [(con,bndrs,expr)]) | not usesVars = changed "caseRemove" expr
   where
     usesVars = exprUsesBinders (b:bndrs) expr
 caseRemove ctx expr = fail "caseRemove"
 
--- ============================================
--- = Case of Known Constructor Simplification =
--- ============================================
+{- |
+If a case expressions scrutinizes a datacon application, we can
+determine which alternative to use and remove the case alltogether.
+We replace it with a let expression the binds every binder in the
+alternative bound to the corresponding argument of the datacon. We do
+this instead of substituting the binders, to prevent duplication of
+work and preserve sharing wherever appropriate.
+-}
 knownCase :: NormalizeStep
 knownCase ctx expr@(Case scrut@(App _ _) bndr ty alts) | not bndrUsed = do
     case CoreSyn.collectArgs scrut of
@@ -434,19 +497,27 @@ knownCase ctx expr@(Case scrut@(App _ _) bndr ty alts) | not bndrUsed = do
 
 knownCase ctx expr = fail "knownCase"
 
--- =================================================
--- = Unrepresentable value removal transformations =
--- =================================================
+{- |
+Remove a = B bindings, with B of a non-representable type, from let
+expressions everywhere. This means that any value that we can't generate a
+signal for, will be inlined and hopefully turned into something we can
+represent.
 
--- ======================================
--- = Non-representable binding inlining =
--- ======================================
+This is a tricky function, which is prone to create loops in the
+transformations. To fix this, we make sure that no transformation will
+create a new let binding with a non-representable type. These other
+transformations will just not work on those function-typed values at first,
+but the other transformations (in particular β-reduction) should make sure
+that the type of those values eventually becomes representable.
+-}
 inlinenonrep :: NormalizeStep
 inlinenonrep = inlineBind "inlinenonrep" (fmap not . isRepr . snd)
 
--- ===========================
--- = Function Specialization =
--- ===========================
+{- |
+Remove all applications to non-representable arguments, by duplicating the
+function called with the non-representable parameter replaced by the free
+variables of the argument passed in.
+-}
 funSpec :: NormalizeStep
 funSpec ctx expr@(App _ _) | isVar fexpr = do
     bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr nsBindings f
@@ -484,9 +555,29 @@ funSpec ctx expr@(App _ _) | isVar fexpr = do
 
 funSpec ctx expr = fail "funSpec"
 
--- =====================================
--- = Non-representable result inlining =
--- =====================================
+{- |
+This transformation takes a function (top level binding) that has a
+non-representable result (e.g., a tuple containing a function, or an
+Integer. The latter can occur in some cases as the result of the
+fromIntegerT function) and inlines enough of the function to make the
+result representable again.
+
+This is done by first normalizing the function and then \"inlining\"
+the result. Since no unrepresentable let bindings are allowed in
+normal form, we can be sure that all free variables of the result
+expression will be representable (Note that we probably can't
+guarantee that all representable parts of the expression will be free
+variables, so we might inline more than strictly needed).
+
+The new function result will be a tuple containing all free variables
+of the old result, so the old result can be rebuild at the caller.
+
+We take care not to inline dictionary id's, which are top level
+bindings with a non-representable result type as well, since those
+will never become VHDL signals directly. There is a separate
+transformation (inlinedict) that specifically inlines dictionaries
+only when it is useful.
+-}
 inlineNonRepResult :: NormalizeStep
 inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr) = do
   case CoreSyn.collectArgs expr of

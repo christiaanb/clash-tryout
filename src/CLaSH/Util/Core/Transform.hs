@@ -126,7 +126,7 @@ substituteAndClone ::
   -> CoreSyn.CoreExpr
   -> TransformStep m
 substituteAndClone find repl context expr = do
-    rwRes <- liftQ $ runRewrite ((extractR . topdownR . tryR . promoteR . transformationStep) substituteAndClone') context expr
+    rwRes <- liftQ $ runRewrite ((extractR . bottomupR . tryR . promoteR . transformationStep) substituteAndClone') context expr
     expr' <- case rwRes of
       (Right (rwExpr,_,_)) -> return rwExpr
       Left errMsg          -> liftQ $ Error.throwError $ $(curLoc) ++ "substituteAndClone failed: " ++ errMsg

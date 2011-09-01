@@ -6,6 +6,8 @@ where
 -- External Modules
 import Language.KURE
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSyn
 
@@ -13,7 +15,8 @@ import qualified CoreSyn
 import CLaSH.Normalize.Types
 import CLaSH.Normalize.Transformations
 import CLaSH.Util.Core.Types
-import CLaSH.Util.Core.Traverse (transformationStep)
+import CLaSH.Util.Core.Traverse (transformationStep,CoreGeneric(..))
+import CLaSH.Util.Pretty
 
 normalizeStrategy :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy = repeatR (normalizeStrategy' .+ failR "done")
@@ -25,22 +28,22 @@ normalizeStrategy' = extractR $ foldl1 (>->) $ map (bottomupR . tryR . promoteR 
             , inlineTopLevel
             , inlineNonRepResult
             , knownCase
-            , funSpec          
+            , funSpec
             , funExtract
-            , etaExpand
-            , betaReduce
-            , appProp
-            , castPropagation
             , letRemoveSimple
             , letRemove
+            , betaReduce
+            , etaExpand
+            , appProp
+            , castPropagation
             , retValSimpl
             , letFlat
             , scrutSimpl
             , scrutBndrRemove
             , caseSimpl
             , caseRemove
-            , inlinenonrep
             , appSimpl
             , letRemoveUnused
             , castSimplification
+            , inlinenonrep
             ]

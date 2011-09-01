@@ -81,6 +81,6 @@ desugarExpr
 desugarExpr bndrString expr = do
   rewritten <- runRewrite desugarStrategy startContext expr
   expr' <- case rewritten of
-    Right (expr',_,_) -> trace bndrString return expr'
+    Right (expr',_,_) -> return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
   return expr'

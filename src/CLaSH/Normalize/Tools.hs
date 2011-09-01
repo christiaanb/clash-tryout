@@ -77,7 +77,7 @@ isRepr ::
   -> NormalizeSession Bool
 isRepr tyThing = case getType tyThing of
   Nothing -> return False
-  Just ty -> (liftErrorState nsNetlistState $ NetlistTools.isReprType ty) `Error.catchError` (\(msg :: String) -> error "DIE!")
+  Just ty -> (liftErrorState nsNetlistState $ NetlistTools.isReprType ty) `Error.catchError` (\(msg :: String) -> trace "DIE!" $ return False)
 
 assertRepr tyThing = case getType tyThing of
   Nothing -> return False

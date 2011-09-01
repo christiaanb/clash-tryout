@@ -1,4 +1,12 @@
 module CLaSH.Normalize.Types
+  ( NormalizeState(..)
+  , NormalizeSession
+  , NormalizeStep
+  , nsNormalized
+  , nsBindings
+  , nsNetlistState
+  , emptyNormalizeState
+  )
 where
 
 -- External Modules
@@ -7,27 +15,42 @@ import Control.Monad.State.Strict (StateT)
 import Data.Label ((:->), lens)
 import qualified Data.Label
 import Data.Map (Map,empty)
-import Language.KURE
+import Language.KURE (RewriteM)
 
 -- GHC API
 import qualified CoreSyn
-import qualified UniqSupply
-import qualified VarEnv
 
 -- Internal Modules
-import CLaSH.Netlist.Types
-import CLaSH.Util.Core.Types
+import CLaSH.Netlist.Types (NetlistState, empytNetlistState)
+import CLaSH.Util.Core.Types (CoreContext,TransformSession)
 
+-- | State kept by the normalization phase
 data NormalizeState = NormalizeState
-  { _nsNormalized     :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  { 
+  -- | Cached normalized binders
+    _nsNormalized     :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  -- | Cached global binders
   , _nsBindings       :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  -- | The state of the netlist-generation stage, intended to decide if
+  -- types are representable
   , _nsNetlistState   :: NetlistState
   }
-  
-emptyNormalizeState bindings = NormalizeState empty bindings empytNetlistState
 
+-- Make lenses for the normalization stage state
 Data.Label.mkLabels [''NormalizeState]
 
+-- | Create an empty state for the normalization session
+emptyNormalizeState ::
+  Map CoreSyn.CoreBndr CoreSyn.CoreExpr -- ^ Cache of global binders
+  -> NormalizeState
+emptyNormalizeState bindings = NormalizeState empty bindings empytNetlistState
+
+-- | The normalization session is a transformation session with extra state
+-- to cache information on already normalized binders. Needs IO to load 
+-- external binder information
 type NormalizeSession = TransformSession (StateT NormalizeState IO)
 
-type NormalizeStep = [CoreContext] -> CoreSyn.CoreExpr -> RewriteM NormalizeSession [CoreContext] CoreSyn.CoreExpr
+type NormalizeStep = 
+  [CoreContext] 
+  -> CoreSyn.CoreExpr 
+  -> RewriteM NormalizeSession [CoreContext] CoreSyn.CoreExpr
