@@ -4,7 +4,8 @@ module CLaSH.Desugar.Strategy
 where
 
 -- External Modules
-import Language.KURE
+import Language.KURE (Rewrite, repeatR, (.+), failR, extractR, topdownR,
+  (>->), tryR, promoteR)
 
 -- GHC API
 import qualified CoreSyn
@@ -12,7 +13,7 @@ import qualified CoreSyn
 -- Internal Modules
 import CLaSH.Desugar.Types
 import CLaSH.Desugar.Transformations
-import CLaSH.Util.Core.Types
+import CLaSH.Util.Core.Types (CoreContext)
 import CLaSH.Util.Core.Traverse (transformationStep)
 
 desugarStrategy :: Rewrite DesugarSession [CoreContext] CoreSyn.CoreExpr

@@ -1,69 +1,50 @@
-{-# LANGUAGE RelaxedLayout #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module CLaSH.Normalize.Tools where
+module CLaSH.Normalize.Tools 
+  ( isNormalizable
+  , isRepr
+  , isLocalVar
+  , isLambdaBodyCtx
+  , mkSelCase
+  , mkBinderFor
+  , mkReferenceTo
+  , mkFunction
+  , splitNormalizedNonRep
+  )
+where
 
 -- External Modules
-import Control.Monad.Trans
+import Control.Monad.Trans (lift)
 import qualified Control.Monad.Error as Error
-import qualified Data.Either as Either
 import qualified Data.Map as Map
 import qualified Data.Label.PureM as Label
-import Language.KURE
-
-import Debug.Trace
 
 -- GHC API
-import qualified CoreSubst
-import CoreSyn (Expr(..),Bind(..),AltCon(..))
+import CoreSyn (Expr(..),AltCon(..))
 import qualified CoreSyn
 import qualified CoreUtils
 import qualified DataCon
 import qualified Id
-import qualified IdInfo
 import qualified MkCore
-import qualified Module
-import qualified MonadUtils
 import qualified Name
-import qualified OccName
-import qualified Outputable
-import qualified SrcLoc
 import qualified TcType
 import qualified TyCon
 import qualified Type
-import qualified UniqSupply
 import qualified Var
-import qualified VarEnv
 
 -- Internal Modules
-import CLaSH.Driver.Tools
-import CLaSH.Netlist.Constants
-import qualified CLaSH.Netlist.Tools as NetlistTools
+import CLaSH.Driver.Tools (addGlobalBind)
+import CLaSH.Netlist.Tools (isReprType, assertReprType)
 import CLaSH.Normalize.Types
-import CLaSH.Util
-import CLaSH.Util.Core.Types
-import CLaSH.Util.Core
-import CLaSH.Util.Core.Traverse
-import CLaSH.Util.Core.Transform
-import CLaSH.Util.GHC
-import CLaSH.Util.Pretty
+import CLaSH.Util (curLoc, liftErrorState)
+import CLaSH.Util.Core (CoreBinding, CoreContext(..), TypedThing, mkInternalVar, 
+  mkTypeVar, cloneVar, flattenLets, getType)
+import CLaSH.Util.Pretty (pprString)
 
-isNormalizable
-  :: Bool
-  -> CoreSyn.CoreBndr
-  -> NormalizeSession Bool
-isNormalizable resultNonRep bndr = do
-  let {
-    ; bndrTy = Id.idType bndr
-    ; (argTys, resTy) = Type.splitFunTys bndrTy
-    ; checkTys = if resultNonRep then argTys else resTy:argTys
-    } 
-  fmap and $ mapM isRepr checkTys
-
-isNormalizableE
-  :: Bool
+isNormalizable ::
+  Bool
   -> CoreSyn.CoreExpr
   -> NormalizeSession Bool
-isNormalizableE resultNonRep bndr = do
+isNormalizable resultNonRep bndr = do
   let {
     ; bndrTy = CoreUtils.exprType bndr
     ; (argTys, resTy) = Type.splitFunTys bndrTy
@@ -77,16 +58,17 @@ isRepr ::
   -> NormalizeSession Bool
 isRepr tyThing = case getType tyThing of
   Nothing -> return False
-  Just ty -> (liftErrorState nsNetlistState $ NetlistTools.isReprType ty) `Error.catchError` (\(msg :: String) -> trace "DIE!" $ return False)
+  Just ty -> (liftErrorState nsNetlistState $ isReprType ty) `Error.catchError` (\(msg :: String) -> return False)
 
-assertRepr tyThing = case getType tyThing of
-  Nothing -> return False
-  Just ty -> liftErrorState nsNetlistState $ NetlistTools.assertReprType ty
-
+isLambdaBodyCtx ::
+  CoreContext
+  -> Bool
 isLambdaBodyCtx (LambdaBody _) = True
 isLambdaBodyCtx _              = False
 
-isLocalVar :: CoreSyn.CoreExpr -> NormalizeSession Bool
+isLocalVar :: 
+  CoreSyn.CoreExpr
+  -> NormalizeSession Bool
 isLocalVar (CoreSyn.Var name) = do
   bndrs <- fmap (Map.keys) $ (lift . lift) $ Label.gets nsBindings
   let isDC = Id.isDataConWorkId name
@@ -95,7 +77,11 @@ isLocalVar _ = return False
 
 -- Create a "selector" case that selects the ith field from dc_ith
 -- datacon
-mkSelCase :: CoreSyn.CoreExpr -> Int -> Int -> NormalizeSession CoreSyn.CoreExpr
+mkSelCase ::
+  CoreSyn.CoreExpr
+  -> Int
+  -> Int
+  -> NormalizeSession CoreSyn.CoreExpr
 mkSelCase scrut dcI i = do
   case Type.splitTyConApp_maybe scrutTy of
     -- The scrutinee should have a type constructor. We keep the type
@@ -125,25 +111,18 @@ mkSelCase scrut dcI i = do
     scrutTy = CoreUtils.exprType scrut
     errorMsg = " Extracting element " ++ (show i) ++ " from datacon " ++ (show dcI) ++ " from '" ++ pprString scrut ++ "'" ++ " Type: " ++ (pprString scrutTy)
 
-getExtExpr
-  :: Name.Name
-  -> NormalizeSession (Maybe CoreSyn.CoreExpr)
-getExtExpr name = do
-  exprMaybe <- Error.liftIO $ loadExtExpr name 
-  case exprMaybe of
-    (Just expr) -> do
-      return (Just expr)
-    Nothing     -> return Nothing
-
-splitNormalizedNonRep
-  :: CoreSyn.CoreExpr
+splitNormalizedNonRep ::
+  CoreSyn.CoreExpr
   -> ([CoreSyn.CoreBndr], [CoreBinding], CoreSyn.CoreExpr)
 splitNormalizedNonRep expr = (args, binds, resExpr)
   where
     (args, letExpr) = CoreSyn.collectBinders expr
     (binds,resExpr) = flattenLets letExpr
 
-mkFunction :: CoreSyn.CoreBndr -> CoreSyn.CoreExpr -> NormalizeSession CoreSyn.CoreBndr
+mkFunction ::
+  CoreSyn.CoreBndr
+  -> CoreSyn.CoreExpr
+  -> NormalizeSession CoreSyn.CoreBndr
 mkFunction bndr body = do
   let bodyTy = CoreUtils.exprType body
   bodyId <- cloneVar bndr
@@ -151,13 +130,15 @@ mkFunction bndr body = do
   (lift . lift) $ addGlobalBind nsBindings newId body
   return newId
 
-mkReferenceTo :: Var.Var -> CoreSyn.CoreExpr
-mkReferenceTo var | Var.isTyVar var = (CoreSyn.Type $ Type.mkTyVarTy var)
-                  | otherwise       = (CoreSyn.Var var)
+mkReferenceTo ::
+  Var.Var
+  -> CoreSyn.CoreExpr
+mkReferenceTo var | Var.isTyVar var = (Type $ Type.mkTyVarTy var)
+                  | otherwise       = (Var var)
 
 mkBinderFor ::
   CoreSyn.CoreExpr 
   -> String 
   -> NormalizeSession Var.Var
-mkBinderFor (CoreSyn.Type ty) name = mkTypeVar name (TcType.typeKind ty)
-mkBinderFor expr name              = mkInternalVar name (CoreUtils.exprType expr)
+mkBinderFor (Type ty) name = mkTypeVar name (TcType.typeKind ty)
+mkBinderFor expr name      = mkInternalVar name (CoreUtils.exprType expr)

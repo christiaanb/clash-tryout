@@ -1,12 +1,18 @@
 module CLaSH.Desugar.Transformations
+  ( inlineArrowBndr
+  , inlineCompLift
+  , arrDesugar
+  , returnADesugar
+  , hooksDesugar
+  , firstDesugar
+  , componentDesugar
+  )
 where
 
 -- External Modules
 import qualified Control.Monad as Monad
-import qualified Control.Monad.Error as Error
-import Control.Monad.Trans
-import qualified Data.Maybe as Maybe
-import Language.KURE
+import Control.Monad.Trans (lift)
+import Language.KURE (liftQ)
   
 -- GHC API
 import CoreSyn (Expr(..),Bind(..))
@@ -17,17 +23,13 @@ import qualified Name
 import qualified TcType
 import qualified Type
 import qualified TysWiredIn
-import qualified Var
 
 -- Internal Modules
 import CLaSH.Desugar.Tools
 import CLaSH.Desugar.Types
-import CLaSH.Driver.Tools
-import CLaSH.Util
-import CLaSH.Util.Core
-import CLaSH.Util.Core.Transform
-import CLaSH.Util.Core.Types
-import CLaSH.Util.Pretty
+import CLaSH.Driver.Tools (getGlobalExpr)
+import CLaSH.Util.Core (mkInternalVar)
+import CLaSH.Util.Core.Transform (changed, regenUniques, inlineBind)
 
 inlineArrowBndr :: DesugarStep
 inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =

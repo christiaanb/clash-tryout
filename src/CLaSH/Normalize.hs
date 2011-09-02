@@ -71,7 +71,7 @@ normalize' nonRepr (bndr:bndrs) = do
   exprMaybe <- (lift . lift) $ getGlobalExpr nsBindings bndr
   case exprMaybe of
     Just expr -> do
-      normalizable <- isNormalizableE nonRepr expr
+      normalizable <- isNormalizable nonRepr expr
       if not normalizable
         then
           Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 

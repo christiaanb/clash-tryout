@@ -4,9 +4,8 @@ module CLaSH.Normalize.Strategy
 where
 
 -- External Modules
-import Language.KURE
-
-import Debug.Trace
+import Language.KURE (Rewrite, repeatR, (.+), failR, extractR, (>->), 
+  bottomupR, tryR, promoteR)
 
 -- GHC API
 import qualified CoreSyn
@@ -14,14 +13,14 @@ import qualified CoreSyn
 -- Internal Modules
 import CLaSH.Normalize.Types
 import CLaSH.Normalize.Transformations
-import CLaSH.Util.Core.Types
-import CLaSH.Util.Core.Traverse (transformationStep,CoreGeneric(..))
-import CLaSH.Util.Pretty
+import CLaSH.Util.Core (CoreContext, transformationStep)
 
-normalizeStrategy :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
+normalizeStrategy ::
+  Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy = repeatR (normalizeStrategy' .+ failR "done")
 
-normalizeStrategy' :: Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
+normalizeStrategy' ::
+  Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy' = extractR $ foldl1 (>->) $ map (bottomupR . tryR . promoteR . transformationStep) steps
   where
     steps = [ letRec

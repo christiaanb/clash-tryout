@@ -2,12 +2,15 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module CLaSH.Util.Core.Traverse 
+module CLaSH.Util.Core.Traverse
+  ( startContext
+  , transformationStep
+  )
 where
 
 -- External Modules
-import Control.Monad
-import Data.Monoid
+import Control.Monad (liftM, liftM2)
+import Data.Monoid (Monoid, mempty, mconcat, mappend)
 import Language.KURE hiding (apply)
 import qualified Language.KURE as KURE
 
@@ -16,7 +19,7 @@ import qualified CoreSyn
 
 -- Internal Modules
 import CLaSH.Util.Core.Types
-import CLaSH.Util.Pretty
+-- import CLaSH.Util.Pretty
 
 startContext :: [CoreContext]
 startContext = []

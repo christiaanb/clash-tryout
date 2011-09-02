@@ -10,9 +10,7 @@ module CLaSH.Normalize.Types
 where
 
 -- External Modules
-import Control.Monad.Error (ErrorT)
 import Control.Monad.State.Strict (StateT)
-import Data.Label ((:->), lens)
 import qualified Data.Label
 import Data.Map (Map,empty)
 import Language.KURE (RewriteM)

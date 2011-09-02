@@ -6,7 +6,7 @@ where
 -- External Modules
 import qualified Control.Monad.Error as Error
 import qualified Control.Monad.State.Strict as State
-import Control.Monad.Trans
+import Control.Monad.Trans (lift)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Label as Label
@@ -25,14 +25,12 @@ import qualified VarSet
 -- Internal Modules
 import CLaSH.Desugar.Strategy
 import CLaSH.Desugar.Types
-import CLaSH.Driver.Tools
-import CLaSH.Driver.Types
-import CLaSH.Netlist.Constants
-import CLaSH.Util
-import CLaSH.Util.Core
-import CLaSH.Util.Core.Types
-import CLaSH.Util.Core.Traverse (startContext)
-import CLaSH.Util.Pretty
+import CLaSH.Driver.Tools (getGlobalExpr)
+import CLaSH.Driver.Types (DriverSession,drUniqSupply)
+import CLaSH.Netlist.Constants (builtinIds)
+import CLaSH.Util (curLoc, makeCached)
+import CLaSH.Util.Core (startContext, nameToString)
+import CLaSH.Util.Core.Types (tsUniqSupply, tsTransformCounter, emptyTransformState)
 
 desugar ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr
@@ -74,8 +72,8 @@ desugar' (bndr:bndrs) = do
 
 desugar' [] = return []
 
-desugarExpr
-  :: String
+desugarExpr ::
+  String
   -> CoreSyn.CoreExpr
   -> DesugarSession CoreSyn.CoreExpr
 desugarExpr bndrString expr = do

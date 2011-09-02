@@ -2,7 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverlappingInstances #-}
-module CLaSH.Util.Core.Show where
+module CLaSH.Util.Core.Show
+where
 
 -- GHC API
 import qualified CoreSyn

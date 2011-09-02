@@ -1,27 +1,33 @@
 module CLaSH.Desugar.Types
+  ( DesugarState(..)
+  , DesugarSession
+  , DesugarStep
+  , dsDesugared
+  , dsBindings
+  , emptyDesugarState
+  )
 where
 
 -- External Modules
-import Control.Monad.Error (ErrorT)
 import Control.Monad.State.Strict (StateT)
-import Data.Label ((:->), lens)
 import qualified Data.Label
 import Data.Map (Map,empty)
-import Language.KURE
+import Language.KURE (RewriteM)
 
 -- GHC API
 import qualified CoreSyn
-import qualified UniqSupply
 
 -- Internal Modules
-import CLaSH.Util.Core.Transform
-import CLaSH.Util.Core.Types
+import CLaSH.Util.Core.Types (TransformSession, CoreContext)
 
 data DesugarState = DesugarState
   { _dsDesugared        :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   , _dsBindings         :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   }
 
+emptyDesugarState ::
+  Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  -> DesugarState
 emptyDesugarState bindings = DesugarState empty bindings
 
 Data.Label.mkLabels [''DesugarState]

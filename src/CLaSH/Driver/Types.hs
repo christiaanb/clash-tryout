@@ -1,4 +1,10 @@
-module CLaSH.Driver.Types where
+module CLaSH.Driver.Types 
+  ( DriverState(..)
+  , DriverSession
+  , drUniqSupply
+  , emptyDriverState
+  )
+where
 
 -- External Modules
 import Control.Monad.State.Strict (StateT)

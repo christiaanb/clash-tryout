@@ -1,9 +1,8 @@
 module CLaSH.Desugar.Tools
+  ( mkDelay
+  , isArrowExpression
+  )
 where
-
--- External Modules
-import qualified Data.Label.PureM as Label
-import Language.KURE
 
 -- GHC API
 import qualified CoreSyn
@@ -15,10 +14,7 @@ import qualified Var
 
 -- Internal Modules
 import CLaSH.Desugar.Types
-import CLaSH.Util
-import CLaSH.Util.Core
-import CLaSH.Util.Core.Transform
-import CLaSH.Util.Core.Traverse
+import CLaSH.Util.Core (mkExternalVar)
 
 mkDelay ::
   Type.TyVar

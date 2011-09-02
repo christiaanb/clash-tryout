@@ -9,7 +9,7 @@ where
 
 import qualified Control.Monad.Error as Error
 import qualified Control.Monad.State as State
-import Control.Monad.Trans
+import Control.Monad.Trans (MonadTrans, lift)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Label ((:->))

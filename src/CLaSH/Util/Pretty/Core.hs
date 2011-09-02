@@ -1,4 +1,4 @@
-module CLaSH.Util.Core.Pretty
+module CLaSH.Util.Pretty.Core
   ( pprBinding
   )
 where
