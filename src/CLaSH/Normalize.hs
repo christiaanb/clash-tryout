@@ -31,7 +31,7 @@ import CLaSH.Netlist.Types (NetlistState)
 import CLaSH.Normalize.Strategy
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
-import CLaSH.Util (curLoc, makeCached)
+import CLaSH.Util (curLoc, makeCachedT2)
 import CLaSH.Util.Core (nameToString)
 import CLaSH.Util.Core.Types (tsTransformCounter, tsUniqSupply, emptyTransformState)
 import CLaSH.Util.Core.Traverse (startContext)
@@ -78,7 +78,7 @@ normalize' nonRepr (bndr:bndrs) = do
             show bndr ++ " is not normalizable (" ++ 
             show (CoreUtils.exprType expr) ++ "):\n" ++ pprString expr
         else do
-          normalizedExpr <- makeCached bndr nsNormalized $
+          normalizedExpr <- makeCachedT2 bndr nsNormalized $
             normalizeExpr (show bndr) expr
           let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
                               (\v -> (not $ Id.isDictId v) && 

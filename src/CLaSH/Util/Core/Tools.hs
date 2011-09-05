@@ -2,6 +2,7 @@
 module CLaSH.Util.Core.Tools
   ( tyHasFreeTyvars
   , nameToString
+  , varToString
   , isFun
   , isPoly
   , isApplicable
@@ -49,6 +50,9 @@ tyHasFreeTyvars = not . VarSet.isEmptyVarSet . Type.tyVarsOfType
 -- | Extracts the string version of a name
 nameToString :: Name.Name -> String
 nameToString = OccName.occNameString . Name.nameOccName
+
+varToString :: Var.Var -> String
+varToString = nameToString . Var.varName
 
 isFun :: CoreSyn.CoreExpr -> Bool
 isFun (CoreSyn.Type _) = False

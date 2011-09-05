@@ -22,8 +22,7 @@ desugarStrategy = repeatR (desugarStrategy' .+ failR "done")
 desugarStrategy' :: Rewrite DesugarSession [CoreContext] CoreSyn.CoreExpr
 desugarStrategy' = extractR $ topdownR $ foldl1 (>->) $ map (tryR . promoteR . transformationStep) steps
   where
-    steps = [ inlineArrowBndr 
-            , inlineCompLift           
+    steps = [ inlineArrowBndr
             , componentDesugar
             , arrDesugar
             , returnADesugar

@@ -6,10 +6,10 @@ import CLaSH
 registerT :: Bit -> Bit -> (Bit,Bit)
 registerT q d = (d,q)
 
-topEntity :: Component Bit (Maybe Bit)
+topEntity :: Component Bit Bit
 topEntity = proc inp -> do
-  outp <- component registerT L sysClock -< inp
-  returnA -< (Just outp)
+  outp <- registerT ^^^ L -< inp
+  returnA -< outp
 
 sysClock :: Clock
 sysClock = ClockUp "sysClock" 1

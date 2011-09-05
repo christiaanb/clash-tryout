@@ -28,7 +28,7 @@ import CLaSH.Desugar.Types
 import CLaSH.Driver.Tools (getGlobalExpr)
 import CLaSH.Driver.Types (DriverSession,drUniqSupply)
 import CLaSH.Netlist.Constants (builtinIds)
-import CLaSH.Util (curLoc, makeCached)
+import CLaSH.Util (curLoc, makeCachedT2)
 import CLaSH.Util.Core (startContext, nameToString)
 import CLaSH.Util.Core.Types (tsUniqSupply, tsTransformCounter, emptyTransformState)
 
@@ -60,7 +60,7 @@ desugar' (bndr:bndrs) = do
   exprMaybe <- (lift . lift) $ getGlobalExpr dsBindings bndr
   case exprMaybe of
     Just expr -> do
-      desugaredExpr <- makeCached bndr dsDesugared $ desugarExpr (show bndr) expr
+      desugaredExpr <- makeCachedT2 bndr dsDesugared $ desugarExpr (show bndr) expr
       let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
                               (\v -> (not $ Id.isDictId v) && 
                                      (not $ Id.isDataConWorkId v) && 

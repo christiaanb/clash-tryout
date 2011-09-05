@@ -17,6 +17,7 @@ import qualified UniqSupply
 import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
 import CLaSH.Desugar (desugar)
+import CLaSH.Netlist (genNetlist)
 import CLaSH.Normalize (normalize)
 import CLaSH.Util.Pretty (pprString)
 import CLaSH.Util.GHC (loadModules)
@@ -32,15 +33,17 @@ generateVHDL modName = do
     let allBindings = concatMap (CoreSyn.flattenBinds . HscTypes.mg_binds) coreModGuts
     let topEntities = filter (isTopEntity . fst) allBindings
     case topEntities of
-      [topEntity] -> do
+      [topEntity'] -> do
+        let topEntity = fst topEntity'
         let globalBindings = Map.fromList allBindings
-        globalBindings'           <- desugar   globalBindings  (fst topEntity)
-        (normalized,netlistState) <- normalize globalBindings' (fst topEntity)
-        return normalized
+        globalBindings'           <- desugar    globalBindings  topEntity
+        (normalized,netlistState) <- normalize  globalBindings' topEntity
+        netlist                   <- genNetlist netlistState normalized topEntity
+        return netlist
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
-  putStrLn $ pprString vhdl
+  putStrLn $ show vhdl
   return ()
 
 runDriverSession ::

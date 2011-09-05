@@ -1,6 +1,5 @@
 module CLaSH.Desugar.Transformations
   ( inlineArrowBndr
-  , inlineCompLift
   , arrDesugar
   , returnADesugar
   , hooksDesugar
@@ -36,17 +35,6 @@ inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
   inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
     
 inlineArrowBndr c expr = fail "inlineArrowHooks"
-
-inlineCompLift :: DesugarStep
-inlineCompLift ctx expr@(Var liftComp) | (Name.getOccString liftComp) == "^^^" = do
-  bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr dsBindings liftComp
-  case bodyMaybe of
-    Just body -> do
-      bodyUniqued <- regenUniques ctx body
-      changed "inlineCompLift" bodyUniqued
-    Nothing -> fail "inlineCompLift"
-
-inlineCompLift ctx expr = fail "inlineCompLift"
 
 arrDesugar :: DesugarStep
 arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do

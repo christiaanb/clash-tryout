@@ -2,6 +2,7 @@
 module CLaSH.Util
   ( curLoc
   , makeCached
+  , makeCachedT2
   , liftErrorState
   , partitionM
   )
@@ -16,13 +17,22 @@ import Data.Label ((:->))
 import qualified Data.Label.PureM as Label
 import qualified Language.Haskell.TH as TH
 
-makeCached ::
+makeCached key lens create = do
+  cache <- Label.gets lens
+  case Map.lookup key cache of
+    Just value -> return value
+    Nothing -> do
+      value <- create
+      Label.modify lens (Map.insert key value)
+      return value
+
+makeCachedT2 ::
   (MonadTrans t1, MonadTrans t2, State.MonadState s m, Ord k, Monad (t2 m), Monad (t1 (t2 m))) 
   => k
   -> s :-> (Map k v)
   -> (t1 (t2 m)) v
   -> (t1 (t2 m)) v
-makeCached key lens create = do
+makeCachedT2 key lens create = do
   cache <- (lift . lift) $ Label.gets lens
   case Map.lookup key cache of
     Just value -> return value
