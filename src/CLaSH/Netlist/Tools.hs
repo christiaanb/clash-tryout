@@ -14,6 +14,7 @@ module CLaSH.Netlist.Tools
   , genUnaryOperator
   , dataconToExpr
   , htypeSize
+  , genComment
   )
 where
 
@@ -22,6 +23,9 @@ import qualified Control.Monad.Error as Error
 import qualified Data.Label.PureM as Label
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
+
+import Debug.Trace
 
 -- GHC API
 import qualified CoreSubst
@@ -78,7 +82,6 @@ mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create
       let name = Name.getOccString (TyCon.tyConName tyCon)
       case name of
         "Bit"       -> return BitType
-        -- "Clock"     -> return ClockType
         "()"        -> return UnitType
         "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
         otherwise -> mkAdtHWType tyCon args
@@ -99,6 +102,7 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
           let realArgTys = (map . map) (CoreSubst.substTy subst) argTyss
           elemHTyss <- mapM (mapM mkHType) realArgTys
           case (dcs, map (filter (/= UnitType)) elemHTyss) of
+            ([dc], [[elemHTy]]) -> return elemHTy
             ([dc], [elemHTys]) -> return $ ProductType name elemHTys
             (dcs,elemHTyss)     -> return $ SPType name $ zip (map (nameToString . DataCon.dataConName) dcs) elemHTyss --Error.throwError ($(curLoc) ++ "Cannot convert SumOfProduct Types to HWTypes: " ++ pprString tyCon)
   where
@@ -166,7 +170,8 @@ dataconToExpr ::
 dataconToExpr hwType dc = do
   let dcName = DataCon.dataConName dc
   case hwType of
-    BitType -> return $ ExprLit $ ExprBit (case Name.getOccString dcName of "H" -> H; "L" -> L)
+    BitType -> return $ ExprLit $ ExprBit (case Name.getOccString dcName of "H" -> H; "L" -> L ; other -> error $ "other: " ++ show other)
+    other -> error $ show other
 
 isNormalizedBndr ::
   CoreSyn.CoreBndr
@@ -189,10 +194,10 @@ typeFieldRange ::
   -> (Int,Int)
 typeFieldRange hwType dcI = (typeFieldRanges hwType)!!dcI
 
-typeFieldRanges (ProductType _ fields) = reverse ranges
+typeFieldRanges (ProductType _ fields) = ranges
   where
     fieldLengths = map (htypeSize) fields
-    (_,ranges)   = List.mapAccumL (\acc l -> let next = acc+l in (next,(next-1,acc))) 0 fieldLengths
+    (_,ranges)   = List.mapAccumL (\acc l -> let next = acc-l in (next,(acc,next + 1))) ((sum fieldLengths)-1) fieldLengths
 
 mkSliceExpr ::
   Ident
@@ -208,7 +213,8 @@ genBinaryOperator ::
 genBinaryOperator op dst args = do
   dstType     <- mkHType dst
   [arg1,arg2] <- mapM (\arg -> case arg of (CoreSyn.Var v) -> varToExpr v; other -> Error.throwError $ $(curLoc) ++ "Not in normal form: arg" ++ pprString arg) args
-  return (mkUncondAssign (dst,dstType) (ExprBinary op arg1 arg2), [])
+  let comment = genComment dst (show op) args
+  return (comment:(mkUncondAssign (dst,dstType) (ExprBinary op arg1 arg2)), [])
 
 genUnaryOperator ::
   UnaryOp
@@ -218,4 +224,12 @@ genUnaryOperator ::
 genUnaryOperator op dst [arg] = do
   dstType <- mkHType dst
   arg'    <- case arg of (CoreSyn.Var v) -> varToExpr v; other -> Error.throwError $ $(curLoc) ++ "Not in normal form: arg" ++ pprString arg
-  return (mkUncondAssign (dst,dstType) (ExprUnary op arg'), [])
+  let comment = genComment dst (show op) [arg]
+  return (comment:(mkUncondAssign (dst,dstType) (ExprUnary op arg')), [])
+
+genComment ::
+  CoreSyn.CoreBndr
+  -> String
+  -> [CoreSyn.CoreExpr]
+  -> Decl
+genComment dst f args = CommentDecl $ pprString dst ++ " = " ++ f ++ (concatMap (\x -> " " ++ pprString x) args) ++ " :: " ++ ((pprString . Maybe.fromJust . getType) dst)

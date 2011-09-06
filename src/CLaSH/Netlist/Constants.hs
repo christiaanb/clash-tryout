@@ -11,4 +11,4 @@ import CLaSH.Netlist.Types
 import CLaSH.Netlist.Tools
 
 builtinIds :: [String]
-builtinIds = ["xorB","andB","notB","delay","unpackCString#","I#"]
+builtinIds = ["xorB","andB","notB","orB","delay","unpackCString#","I#"]

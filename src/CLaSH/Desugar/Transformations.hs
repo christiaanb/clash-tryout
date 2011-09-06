@@ -116,7 +116,7 @@ componentDesugar ctx expr@(Var component) | (Name.getOccString component) == "co
   [fId,initSId,clockId]           <- liftQ $ Monad.zipWithM mkInternalVar ["tFun","initS","clock"]        [fTy,sTy,clockTy]
   [inputId,outputId,outputSId]    <- liftQ $ Monad.zipWithM mkInternalVar ["input","output","outputS"]    [iTy,oTy,oTy]
   resId                           <- liftQ $ mkInternalVar "result" resTy
-  [stateInId,stateOutId,stateSId] <- liftQ $ Monad.zipWithM mkInternalVar ["stateIn","stateOut","stateS"] [sTy,sTy,sTy]
+  [stateInId,stateOutId,stateSId] <- liftQ $ Monad.zipWithM mkInternalVar ["stateCur","stateNext","stateS"] [sTy,sTy,sTy]
   let unpackStateOut              = MkCore.mkSmallTupleSelector [stateSId,outputSId] stateSId  (MkCore.mkWildValBinder resTy) (Var resId)
   let unpackOutput                = MkCore.mkSmallTupleSelector [stateSId,outputSId] outputSId (MkCore.mkWildValBinder resTy) (Var resId)
   delayFunc                       <- liftQ $ mkDelay sTV clockTy

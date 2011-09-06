@@ -17,8 +17,11 @@ import Debug.Trace
 
 -- GHC API
 import qualified CoreFVs
+import qualified CoreSubst
 import qualified CoreSyn
+import qualified CoreUtils
 import qualified Id
+import qualified Outputable
 import qualified Var
 import qualified VarSet
 
@@ -31,6 +34,7 @@ import CLaSH.Netlist.Constants (builtinIds)
 import CLaSH.Util (curLoc, makeCachedT2)
 import CLaSH.Util.Core (startContext, nameToString)
 import CLaSH.Util.Core.Types (tsUniqSupply, tsTransformCounter, emptyTransformState)
+import CLaSH.Util.Pretty (pprString)
 
 desugar ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr
@@ -46,16 +50,15 @@ desugar globals bndr = do
         (emptyDesugarState globals)
   case retVal of
     Left  errMsg -> error errMsg
-    Right _ -> do
+    Right desugared -> do
       let uniqSupply' = Label.get tsUniqSupply tState
       let transformations = Label.get tsTransformCounter tState
-      let desugared   = Label.get dsDesugared  dState
       LabelM.puts drUniqSupply uniqSupply'
-      return $ trace ("Desugar transformations: " ++ show transformations) $ desugared `Map.union` globals
+      return $ trace ("Desugar transformations: " ++ show transformations) $ (Map.fromList desugared) `Map.union` globals
 
 desugar' ::
   [CoreSyn.CoreBndr]
-  -> DesugarSession [CoreSyn.CoreExpr]
+  -> DesugarSession [(CoreSyn.CoreBndr,CoreSyn.CoreExpr)]
 desugar' (bndr:bndrs) = do
   exprMaybe <- (lift . lift) $ getGlobalExpr dsBindings bndr
   case exprMaybe of
@@ -66,8 +69,12 @@ desugar' (bndr:bndrs) = do
                                      (not $ Id.isDataConWorkId v) && 
                                      (nameToString $ Var.varName v) `notElem` builtinIds) 
                               desugaredExpr
-      desugaredOthers <- desugar' (usedBndrs ++ bndrs)
-      return (desugaredExpr:desugaredOthers)
+      desugaredUsed <- desugar' usedBndrs
+      let desugaredUsedTys = map (CoreUtils.exprType . snd) desugaredUsed
+      let usedBndrs' = zipWith Var.setVarType usedBndrs desugaredUsedTys
+      let desugaredExpr' = foldl doSubstitute desugaredExpr $ zip usedBndrs (map CoreSyn.Var usedBndrs')
+      desugaredOthers <- desugar' bndrs
+      return ((bndr,desugaredExpr'):(desugaredUsed ++ desugaredOthers))
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."
 
 desugar' [] = return []
@@ -82,3 +89,7 @@ desugarExpr bndrString expr = do
     Right (expr',_,_) -> return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
   return expr'
+
+doSubstitute expr (find, repl) = CoreSubst.substExpr (Outputable.text "substitute") subst expr
+  where
+    subst = CoreSubst.extendSubst CoreSubst.emptySubst find repl

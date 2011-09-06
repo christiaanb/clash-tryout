@@ -40,7 +40,10 @@ data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
           | ProcessDecl [(Event,Stmt)]
+          | CommentDecl String
   deriving (Eq,Ord,Show)
+
+type ConstExpr = Expr
           
 data Event = Event Expr Edge
   deriving (Eq,Ord,Show)
@@ -55,6 +58,7 @@ data Expr = ExprLit     ExprLit
           | ExprVar     Ident
           | ExprSlice   Ident Expr Expr
           | ExprConcat  [Expr]
+          | ExprCase    Expr [([ConstExpr], Expr)] (Maybe Expr)
           | ExprCond    Expr Expr Expr
           | ExprUnary   UnaryOp Expr
           | ExprBinary  BinaryOp Expr Expr
@@ -78,7 +82,7 @@ data Stmt = Assign LValue Expr
           
 type LValue = Expr
 
-data UnaryOp = Neg
+data UnaryOp = LNeg
   deriving (Eq,Ord,Show)
 
 data BinaryOp = Plus | Minus | Times | Equals | NotEquals | And | Or | Xor

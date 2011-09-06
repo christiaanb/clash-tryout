@@ -87,6 +87,9 @@ inst _ (InstDecl nm inst gens ins outs) = Just $
    ps = text "port map" <+>
          parens (cat (punctuate comma  [text i <+> text "=>" <+> expr e | (i,e) <- (ins ++ outs)]))
 
+inst _ (CommentDecl msg) = Just $
+	(vcat [ text "--" <+> text m | m <- lines msg ])
+
 inst _ _d = Nothing
 
 pstmts :: [(Event, Stmt)] -> Doc
@@ -124,6 +127,29 @@ expr (ExprSlice s h l)
   | otherwise = text s <> parens (expr h <+> text "to" <+> expr l)
 
 expr (ExprConcat ss) = hcat $ punctuate (text " & ") (map expr ss)
+expr (ExprUnary op e) = lookupUnary op (expr e)
+expr (ExprBinary op a b) = lookupBinary op (expr a) (expr b)
+expr (ExprCond c t e) = expr t <+> text "when" <+> expr c <+> text "else" $$ expr e
+expr (ExprCase _ [] Nothing) = error "VHDL does not support non-defaulted ExprCase"
+expr (ExprCase _ [] (Just e)) = expr e
+expr (ExprCase e (([],_):alts) def) = expr (ExprCase e alts def)
+expr (ExprCase e ((p:ps,alt):alts) def) =
+	expr (ExprCond (ExprBinary Equals e p) alt (ExprCase e ((ps,alt):alts) def))
+
+lookupUnary :: UnaryOp -> Doc -> Doc
+lookupUnary op e = text (unOp op) <> parens e
+
+unOp :: UnaryOp -> String
+unOp LNeg = "not"
+
+lookupBinary :: BinaryOp -> Doc -> Doc -> Doc
+lookupBinary op a b = parens $ a <+> text (binOp op) <+> b
+
+binOp :: BinaryOp -> String
+binOp And = "and"
+binOp Xor = "xor"
+binOp Or  = "or"
+binOp Equals = "="
 
 mkSensitivityList :: Decl -> [Expr]
 mkSensitivityList (ProcessDecl evs) = nub event_names
@@ -138,6 +164,7 @@ slv_type :: HWType -> Doc
 slv_type BitType = text "std_logic"
 slv_type ClockType = text "std_logic"
 slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit $ ExprNum $ 0)
+slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit $ ExprNum $ 0)
 
 range :: (Expr,Expr) -> Doc
 range (high, low) = parens (expr high <+> text "downto" <+> expr low)
