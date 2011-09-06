@@ -60,7 +60,7 @@ normalize globals bndr = do
       let transformations = Label.get tsTransformCounter tState
       let netlistState    = Label.get nsNetlistState     nState
       LabelM.puts drUniqSupply uniqSupply'
-      return $ trace ("Normalize transformations: " ++ show transformations)
+      return $ trace ("Normalize transformations: " ++ show transformations ++ "\n" ++ pprString normalized)
         (normalized,netlistState)
 
 normalize' ::

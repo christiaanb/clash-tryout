@@ -33,10 +33,11 @@ data Module = Module {
     _modName    :: Ident
   , _modInputs  :: [(Ident,HWType)]
   , _modOutptus :: [(Ident,HWType)]
-  , _modDecl    :: [Decl]
+  , _modDecls   :: [Decl]
   } deriving (Eq,Ord,Show)
   
 data Decl = NetDecl     Ident HWType (Maybe Expr)
+          | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
           | ProcessDecl [(Event,Stmt)]
   deriving (Eq,Ord,Show)

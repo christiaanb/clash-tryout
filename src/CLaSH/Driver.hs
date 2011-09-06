@@ -18,6 +18,7 @@ import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
 import CLaSH.Desugar (desugar)
 import CLaSH.Netlist (genNetlist)
+import CLaSH.Netlist.GenVHDL (genVHDL)
 import CLaSH.Normalize (normalize)
 import CLaSH.Util.Pretty (pprString)
 import CLaSH.Util.GHC (loadModules)
@@ -39,11 +40,12 @@ generateVHDL modName = do
         globalBindings'           <- desugar    globalBindings  topEntity
         (normalized,netlistState) <- normalize  globalBindings' topEntity
         netlist                   <- genNetlist netlistState normalized topEntity
-        return netlist
+        let vhdl                  = map ((flip genVHDL) []) netlist
+        return vhdl
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
-  putStrLn $ show vhdl
+  putStrLn $ concat vhdl
   return ()
 
 runDriverSession ::

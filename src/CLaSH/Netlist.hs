@@ -15,8 +15,11 @@ import qualified Data.Map as Map
 -- GHC API
 import CoreSyn (Expr(..),Bind(..),AltCon(..))
 import qualified CoreSyn
+import qualified FastString
 import qualified Id
 import qualified IdInfo
+import qualified Literal
+import qualified Name
 import qualified Var
 
 -- Internal Modules
@@ -65,7 +68,11 @@ genModule' modName modExpr = do
   (resType:argTypes)     <- mapM mkHType (res:args)
   let (resName:argNames) = map varToString (res:args)
   (decls,clocks)         <- fmap unzip $ mapM mkConcSm binds
-  return $ Module (varToString modName) (zip argNames argTypes) [(resName,resType)] (concat decls)
+  let modName' = varToString modName
+  let modInps  = (zip argNames argTypes) ++ (concat clocks)
+  let modOutps = [(resName,resType)]
+  let modDecls = concat decls
+  return $ Module modName' modInps modOutps modDecls
 
 mkConcSm ::
   CoreBinding
@@ -94,14 +101,13 @@ mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) = do
                 then do
                   let selName = varToString scrut
                   let selExpr = ExprVar selName
-                  return ([mkUncondAssign (bndr,hwTypeBndr) selExpr], [])
+                  return (mkUncondAssign (bndr,hwTypeBndr) selExpr, [])
                 else do
                   case hwTypeScrut of
                     ProductType _ _ -> do
-                      dcI <- dataconIndex (Id.idType scrut) dc
-                      let fieldSlice = typeFieldRange hwTypeScrut dcI
+                      let fieldSlice = typeFieldRange hwTypeScrut selI
                       let sliceExpr = mkSliceExpr (varToString scrut) fieldSlice
-                      return ([mkUncondAssign (bndr,hwTypeBndr) sliceExpr],[])
+                      return (mkUncondAssign (bndr,hwTypeBndr) sliceExpr,[])
                     other -> do
                       error $ show hwTypeScrut
             Nothing -> Error.throwError $ $(curLoc) ++ "Not in normal form: not a selector case: result is not one of the bndrs:\n" ++ pprString expr
@@ -130,13 +136,19 @@ genApplication dst f args = do
               args'   <- Monad.filterM hasNonEmptyType args
               case dstType of
                 SumType _ _ -> error "genApp dataConWork SumType"
+                -- ProductType 
                 ProductType _ argTys -> do
                   args'' <- mapM (\arg -> case arg of (Var v) -> varToExpr v ; _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: constructor with non-Var args: " ++ pprString (dst,f,args)) args'
-                  if (length argTys) == (length args)
-                    then return ([mkUncondAssign (dst,dstType) (ExprConcat args'')],[])
-                    else Error.throwError $ $(curLoc) ++ "Not in normal form: underapplied constructor: " ++ pprString (dst,f,args)  
+                  if (length argTys) == (length args'')
+                    then return (mkUncondAssign (dst,dstType) (ExprConcat args''),[])
+                    else Error.throwError $ $(curLoc) ++ "Not in normal form: underapplied constructor: " ++ pprString (dst,f,args) ++ show argTys  
                 SPType _ _ -> error "genApp dataConWork SPType"
+                BitType -> simpleAssign dstType
                 other -> error $ "genApp dataConWork: " ++ show other
+                where
+                  simpleAssign dstType = do
+                    expr <- dataconToExpr dstType dc
+                    return (mkUncondAssign (dst,dstType) expr,[])
             IdInfo.DataConWrapId dc -> do
               error "genApp dataConWrap"
             IdInfo.VanillaId -> do
@@ -149,8 +161,19 @@ genApplication dst f args = do
                   normalized <- isNormalizedBndr f
                   if normalized
                     then do
-                      modDec <- genModule f
-                      error $ show modDec
+                      modu@(Module modName modInps [modOutps] _)  <- genModule f
+                      let clocks = filter ((== ClockType) . snd) modInps
+                      let clocksN = filter ((/= ClockType) . snd) modInps
+                      if (length clocks + length args) == (length modInps)
+                        then do
+                          let dstName = (varToString dst)
+                          args' <- mapM (\arg -> case arg of (CoreSyn.Var v) -> varToExpr v; other -> Error.throwError $ $(curLoc) ++ "Not in normal form: arg" ++ pprString arg) args
+                          let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
+                          let inpsAssign = zip (map fst clocksN) args'
+                          let outpAssign  = (fst modOutps, ExprVar dstName)
+                          return ([InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
+                        else do
+                          Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu 
                     else do
                       dstType <- mkHType dst
                       Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
@@ -164,6 +187,49 @@ genApplication dst f args = do
             else do
               dstType <- mkHType dst
               f' <- varToExpr f
-              return ([mkUncondAssign (dst,dstType) f'],[])      
+              return (mkUncondAssign (dst,dstType) f',[])      
     else
       return ([],[])
+
+type BuiltinBuilder =
+  CoreSyn.CoreBndr
+  -> [CoreSyn.CoreExpr]
+  -> NetlistSession ([Decl],[(Ident,HWType)])
+  
+type BuilderTable = [(String, (Int, BuiltinBuilder))]
+
+builtinBuilders :: BuilderTable
+builtinBuilders =
+  [ ("xorB" , (2, genBinaryOperator Xor))
+  , ("andB" , (2, genBinaryOperator And))
+  , ("notB" , (1, genUnaryOperator  Neg))
+  , ("delay", (3, genDelay))
+  ]
+  
+genDelay :: BuiltinBuilder
+genDelay state [Var initS, clock, Var stateP] = do
+  stateTy <- mkHType state
+  let [stateName,initSName,statePName] = map varToString [state,initS,stateP]
+  let stateDecl  = NetDecl stateName stateTy Nothing
+  (clockName,clockEdge) <- parseClock clock
+  let resetName  = clockName ++ "Reset"
+  let resetEvent = Event (ExprVar resetName) AsyncLow
+  let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
+  let clockEvent = Event (ExprVar clockName) clockEdge
+  let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
+  let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
+  return $ ([stateDecl,register],[(clockName,ClockType),(resetName,ClockType)])
+
+parseClock ::
+  CoreSyn.CoreExpr
+  -> NetlistSession (Ident,Edge)
+parseClock clock = do
+  case clock of
+    (App _ _) -> do
+      let (Var clockTyCon, [clockNameCString,_]) = CoreSyn.collectArgs clock
+      let (CoreSyn.Var unpackCString, [Lit (Literal.MachStr clockFS)]) = CoreSyn.collectArgs clockNameCString
+      let clockName = FastString.unpackFS clockFS
+      case (Name.getOccString clockTyCon) of
+        "ClockUp"   -> return (clockName,PosEdge)
+        "ClockDown" -> return (clockName,NegEdge)
+    _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock

@@ -12,6 +12,8 @@ module CLaSH.Netlist.Tools
   , mkSliceExpr
   , genBinaryOperator
   , genUnaryOperator
+  , dataconToExpr
+  , htypeSize
   )
 where
 
@@ -76,7 +78,7 @@ mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create
       let name = Name.getOccString (TyCon.tyConName tyCon)
       case name of
         "Bit"       -> return BitType
-        "Clock"     -> return ClockType
+        -- "Clock"     -> return ClockType
         "()"        -> return UnitType
         "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
         otherwise -> mkAdtHWType tyCon args
@@ -96,7 +98,7 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
         _  -> do
           let realArgTys = (map . map) (CoreSubst.substTy subst) argTyss
           elemHTyss <- mapM (mapM mkHType) realArgTys
-          case (dcs, elemHTyss) of
+          case (dcs, map (filter (/= UnitType)) elemHTyss) of
             ([dc], [elemHTys]) -> return $ ProductType name elemHTys
             (dcs,elemHTyss)     -> return $ SPType name $ zip (map (nameToString . DataCon.dataConName) dcs) elemHTyss --Error.throwError ($(curLoc) ++ "Cannot convert SumOfProduct Types to HWTypes: " ++ pprString tyCon)
   where
@@ -133,15 +135,15 @@ hasNonEmptyType thing = do
 mkUncondAssign ::
   (CoreSyn.CoreBndr, HWType)
   -> Expr
-  -> Decl
+  -> [Decl]
 mkUncondAssign dst expr = mkAssign dst Nothing expr
 
 mkAssign ::
   (CoreSyn.CoreBndr, HWType)
   -> Maybe (Expr, Expr)
   -> Expr
-  -> Decl
-mkAssign (dst,dstTy) cond falseExpr = NetDecl dstName dstTy (Just assignExpr)
+  -> [Decl]
+mkAssign (dst,dstTy) cond falseExpr = [NetDecl dstName dstTy Nothing, NetAssign dstName assignExpr]
   where
     dstName    = nameToString $ Var.varName dst
     assignExpr = case cond of
@@ -152,13 +154,19 @@ varToExpr ::
   Var.Var
   -> NetlistSession Expr
 varToExpr var = case Id.isDataConWorkId_maybe var of
-  Just dc -> dataconToExpr dc
+  Just dc -> do
+    varTy <- mkHType var
+    dataconToExpr varTy dc
   Nothing -> return $ ExprVar $ nameToString $ Var.varName var
 
 dataconToExpr ::
-  DataCon.DataCon
+  HWType
+  -> DataCon.DataCon
   -> NetlistSession Expr
-dataconToExpr dc = error "dataconToExpr"
+dataconToExpr hwType dc = do
+  let dcName = DataCon.dataConName dc
+  case hwType of
+    BitType -> return $ ExprLit $ ExprBit (case Name.getOccString dcName of "H" -> H; "L" -> L)
 
 isNormalizedBndr ::
   CoreSyn.CoreBndr
@@ -181,10 +189,10 @@ typeFieldRange ::
   -> (Int,Int)
 typeFieldRange hwType dcI = (typeFieldRanges hwType)!!dcI
 
-typeFieldRanges (ProductType _ fields) = ranges
+typeFieldRanges (ProductType _ fields) = reverse ranges
   where
     fieldLengths = map (htypeSize) fields
-    (_,ranges)   = List.mapAccumL (\acc l -> let next = acc+l in (next,(acc,next-1))) 0 fieldLengths
+    (_,ranges)   = List.mapAccumL (\acc l -> let next = acc+l in (next,(next-1,acc))) 0 fieldLengths
 
 mkSliceExpr ::
   Ident
@@ -200,7 +208,7 @@ genBinaryOperator ::
 genBinaryOperator op dst args = do
   dstType     <- mkHType dst
   [arg1,arg2] <- mapM (\arg -> case arg of (CoreSyn.Var v) -> varToExpr v; other -> Error.throwError $ $(curLoc) ++ "Not in normal form: arg" ++ pprString arg) args
-  return ([mkUncondAssign (dst,dstType) (ExprBinary op arg1 arg2)], [])
+  return (mkUncondAssign (dst,dstType) (ExprBinary op arg1 arg2), [])
 
 genUnaryOperator ::
   UnaryOp
@@ -210,4 +218,4 @@ genUnaryOperator ::
 genUnaryOperator op dst [arg] = do
   dstType <- mkHType dst
   arg'    <- case arg of (CoreSyn.Var v) -> varToExpr v; other -> Error.throwError $ $(curLoc) ++ "Not in normal form: arg" ++ pprString arg
-  return ([mkUncondAssign (dst,dstType) (ExprUnary op arg')], [])
+  return (mkUncondAssign (dst,dstType) (ExprUnary op arg'), [])
