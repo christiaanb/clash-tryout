@@ -32,7 +32,7 @@ import CLaSH.Driver.Tools (getGlobalExpr)
 import CLaSH.Driver.Types (DriverSession,drUniqSupply)
 import CLaSH.Netlist.Constants (builtinIds)
 import CLaSH.Util (curLoc, makeCachedT2)
-import CLaSH.Util.Core (startContext, nameToString)
+import CLaSH.Util.Core (startContext, nameToString, TypedThing(..))
 import CLaSH.Util.Core.Types (tsUniqSupply, tsTransformCounter, emptyTransformState)
 import CLaSH.Util.Pretty (pprString)
 
@@ -67,10 +67,12 @@ desugar' (bndr:bndrs) = do
       let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
                               (\v -> (not $ Id.isDictId v) && 
                                      (not $ Id.isDataConWorkId v) && 
+                                     (not $ Id.isEvVar v) &&
+                                     (Id.isDataConId_maybe v == Nothing) &&
                                      (nameToString $ Var.varName v) `notElem` builtinIds) 
                               desugaredExpr
       desugaredUsed <- desugar' usedBndrs
-      let desugaredUsedTys = map (CoreUtils.exprType . snd) desugaredUsed
+      let desugaredUsedTys = map (getTypeFail . snd) $ filter ((`elem` usedBndrs) . fst) desugaredUsed
       let usedBndrs' = zipWith Var.setVarType usedBndrs desugaredUsedTys
       let desugaredExpr' = foldl doSubstitute desugaredExpr $ zip usedBndrs (map CoreSyn.Var usedBndrs')
       desugaredOthers <- desugar' bndrs

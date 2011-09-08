@@ -3,12 +3,13 @@ where
 
 -- External Modules
 import Control.Monad.Error (ErrorT)
-import Control.Monad.State (State)
+import Control.Monad.State.Strict (State)
 import qualified Data.Label
 import Data.Map (Map,empty)
 
 -- GHC API
 import qualified CoreSyn
+import qualified TyCon
 import qualified Type
 
 newtype OrdType = OrdType Type.Type
@@ -17,8 +18,13 @@ instance Eq OrdType where
 instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.cmpType a b
 
+type Size = Int
+
 data HWType = BitType
-            | SignedType Int
+            | BoolType
+            | SignedType Size
+            | UnsignedType Size
+            | VecType Size HWType
             | SumType     String [String]
             | ProductType String [HWType]
             | SPType      String [(String,[HWType])]
@@ -52,9 +58,9 @@ data Edge = PosEdge
           | NegEdge
           | AsyncHigh
           | AsyncLow
-  deriving (Eq,Ord,Show)
-          
-data Expr = ExprLit     ExprLit
+  deriving (Eq,Ord,Show) 
+         
+data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprVar     Ident
           | ExprSlice   Ident Expr Expr
           | ExprConcat  [Expr]
@@ -93,9 +99,10 @@ data NetlistState = NetlistState
   , _nlModCnt     :: Integer
   , _nlMods       :: Map CoreSyn.CoreBndr Module
   , _nlNormalized :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  , _nlTfpSyn     :: Map TyCon.TyCon Integer
   }
 
-empytNetlistState = NetlistState empty 0 empty empty
+empytNetlistState = NetlistState empty 0 empty empty empty
 
 Data.Label.mkLabels [''NetlistState]
 

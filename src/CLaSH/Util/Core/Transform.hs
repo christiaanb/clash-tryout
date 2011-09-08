@@ -19,6 +19,8 @@ import qualified Data.Label.PureM as Label
 import Language.KURE (RewriteM, markM, runRewrite, extractR, bottomupR, tryR,
   promoteR, Rewrite, topdownR, liftQ)
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSubst
 import CoreSyn (Expr(..),Bind(..))
@@ -212,7 +214,7 @@ cloneVar ::
   -> (TransformSession m) Var.Var
 cloneVar v = do
   uniq <- mkUnique
-  return $ Var.lazySetIdInfo (Var.setVarUnique v uniq) IdInfo.vanillaIdInfo
+  return $ Var.lazySetIdInfo (Var.setVarUnique v uniq) (IdInfo.vanillaIdInfo)
 
 mkUnique ::
   (Monad m)
@@ -230,7 +232,7 @@ mkInternalVar ::
   -> (TransformSession m) Var.Var
 mkInternalVar name ty = do
   uniq <- mkUnique
-  let occName = OccName.mkVarOcc (name ++ show uniq)
+  let occName = OccName.mkVarOcc name
   let name'   = Name.mkInternalName uniq occName SrcLoc.noSrcSpan
   return $ Var.mkLocalVar IdInfo.VanillaId name' ty IdInfo.vanillaIdInfo
 

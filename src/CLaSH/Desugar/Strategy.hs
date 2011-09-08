@@ -28,4 +28,5 @@ desugarStrategy' = extractR $ topdownR $ foldl1 (>->) $ map (tryR . promoteR . t
             , returnADesugar
             , hooksDesugar
             , firstDesugar
+            , loopDesugar
             ]

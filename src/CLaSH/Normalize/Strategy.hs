@@ -23,26 +23,26 @@ normalizeStrategy' ::
   Rewrite NormalizeSession [CoreContext] CoreSyn.CoreExpr
 normalizeStrategy' = extractR $ foldl1 (>->) $ map (bottomupR . tryR . promoteR . transformationStep) steps
   where
-    steps = [ letRec
-            , inlineTopLevel
+    steps = [ inlineTopLevel
             , inlineNonRepResult
             , knownCase
             , funSpec
             , funExtract
-            , letRemoveSimple
-            , letRemove
-            , betaReduce
             , etaExpand
+            , betaReduce
             , appProp
             , castPropagation
+            , letRemoveSimple
+            , letRec
+            , letRemove
             , retValSimpl
             , letFlat
             , scrutSimpl
             , scrutBndrRemove
             , caseSimpl
             , caseRemove
+            , inlinenonrep
             , appSimpl
             , letRemoveUnused
             , castSimplification
-            , inlinenonrep
             ]

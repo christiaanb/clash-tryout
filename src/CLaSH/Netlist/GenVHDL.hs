@@ -12,8 +12,8 @@ import Data.List (nub)
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 
-genVHDL :: Module -> [String] -> String
-genVHDL m others = render vhdl ++ "\n"
+genVHDL :: Module -> [String] -> (String,String)
+genVHDL m others = (_modName m, render vhdl ++ "\n")
   where
     vhdl = imports others $$
            entity m $$
@@ -107,6 +107,14 @@ event (Event i AsyncLow)  = expr i <+> text "= '0'"
 stmt :: Stmt -> Doc
 stmt (Assign l r) = expr l <+> text "<=" <+> expr r <> semi
 
+to_bits :: Integral a => Int -> a -> [Bit]
+to_bits size val = map (\x -> if odd x then H else L)
+                   $ reverse
+                   $ take size
+                   $ map (`mod` 2)
+                   $ iterate (`div` 2)
+                   $ val
+
 bit_char :: Bit -> Char
 bit_char H = '1'
 bit_char L = '0'
@@ -115,12 +123,16 @@ bit_char U = 'U'  -- 'U' means uninitialized,
                   -- not completely sure that 'U' is the right choice here.
 bit_char Z = 'Z'
 
-expr_lit :: ExprLit -> Doc
-expr_lit (ExprNum i)          = int $ fromIntegral i
-expr_lit (ExprBit x)                = quotes (char (bit_char x))
+bits :: [Bit] -> Doc
+bits = doubleQuotes . text . map bit_char
+
+expr_lit :: Maybe Size -> ExprLit -> Doc
+expr_lit Nothing (ExprNum i)          = int $ fromIntegral i
+expr_lit (Just sz) (ExprNum i)        = bits (to_bits sz i)
+expr_lit _ (ExprBit x)                = quotes (char (bit_char x))
 
 expr :: Expr -> Doc
-expr (ExprLit lit) = expr_lit lit
+expr (ExprLit mb_sz lit) = expr_lit mb_sz lit
 expr (ExprVar n) = text n
 expr (ExprSlice s h l)
   | h >= l = text s <> parens (expr h <+> text "downto" <+> expr l)
@@ -129,6 +141,7 @@ expr (ExprSlice s h l)
 expr (ExprConcat ss) = hcat $ punctuate (text " & ") (map expr ss)
 expr (ExprUnary op e) = lookupUnary op (expr e)
 expr (ExprBinary op a b) = lookupBinary op (expr a) (expr b)
+expr (ExprFunCall f args) = text f <> parens (cat $ punctuate comma $ map expr args)
 expr (ExprCond c t e) = expr t <+> text "when" <+> expr c <+> text "else" $$ expr e
 expr (ExprCase _ [] Nothing) = error "VHDL does not support non-defaulted ExprCase"
 expr (ExprCase _ [] (Just e)) = expr e
@@ -150,6 +163,8 @@ binOp And = "and"
 binOp Xor = "xor"
 binOp Or  = "or"
 binOp Equals = "="
+binOp Plus = "+"
+binOp Minus = "-"
 
 mkSensitivityList :: Decl -> [Expr]
 mkSensitivityList (ProcessDecl evs) = nub event_names
@@ -162,9 +177,11 @@ mkSensitivityList (ProcessDecl evs) = nub event_names
 
 slv_type :: HWType -> Doc
 slv_type BitType = text "std_logic"
+slv_type BoolType = text "std_logic"
 slv_type ClockType = text "std_logic"
-slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit $ ExprNum $ 0)
-slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit $ ExprNum $ 0)
+slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum $ 0)
+slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
+slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
 
 range :: (Expr,Expr) -> Doc
 range (high, low) = parens (expr high <+> text "downto" <+> expr low)

@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module CLaSH.Normalize.Tools 
   ( isNormalizable
+  , assertNormalizable
   , isRepr
   , isLocalVar
   , isLambdaBodyCtx
@@ -36,7 +37,7 @@ import CLaSH.Driver.Tools (addGlobalBind)
 import CLaSH.Netlist.Tools (isReprType, assertReprType)
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, liftErrorState)
-import CLaSH.Util.Core (CoreBinding, CoreContext(..), TypedThing, mkInternalVar, 
+import CLaSH.Util.Core (CoreBinding, CoreContext(..), TypedThing(..), mkInternalVar, 
   mkTypeVar, cloneVar, flattenLets, getType)
 import CLaSH.Util.Pretty (pprString)
 
@@ -46,11 +47,22 @@ isNormalizable ::
   -> NormalizeSession Bool
 isNormalizable resultNonRep bndr = do
   let {
-    ; bndrTy = CoreUtils.exprType bndr
+    ; bndrTy = getTypeFail bndr
     ; (argTys, resTy) = Type.splitFunTys bndrTy
     ; checkTys = if resultNonRep then argTys else resTy:argTys
     } 
   fmap and $ mapM isRepr checkTys
+
+assertNormalizable ::
+  Bool
+  -> CoreSyn.CoreExpr
+  -> NormalizeSession Bool
+assertNormalizable resultNonRep expr = do
+  let { exprTy = getTypeFail expr
+      ; (argTys,resTy) = Type.splitFunTys exprTy
+      ; checkTys = if resultNonRep then argTys else resTy:argTys
+      }
+  fmap and $ mapM assertRepr checkTys
 
 isRepr ::
   (TypedThing t)
@@ -59,6 +71,14 @@ isRepr ::
 isRepr tyThing = case getType tyThing of
   Nothing -> return False
   Just ty -> (liftErrorState nsNetlistState $ isReprType ty) `Error.catchError` (\(msg :: String) -> return False)
+
+assertRepr ::
+  (TypedThing t)
+  => t
+  -> NormalizeSession Bool
+assertRepr tyThing = case getType tyThing of
+  Nothing -> return False
+  Just ty -> (liftErrorState nsNetlistState $ assertReprType ty)
 
 isLambdaBodyCtx ::
   CoreContext
@@ -108,7 +128,7 @@ mkSelCase scrut dcI i = do
       Nothing -> Error.throwError $ $(curLoc) ++ "Creating extractor case, but scrutinee has no datacons?" ++ errorMsg
     Nothing -> Error.throwError $ $(curLoc) ++ "Creating extractor case, but scrutinee has no tycon?" ++ errorMsg
   where
-    scrutTy = CoreUtils.exprType scrut
+    scrutTy = getTypeFail scrut
     errorMsg = " Extracting element " ++ (show i) ++ " from datacon " ++ (show dcI) ++ " from '" ++ pprString scrut ++ "'" ++ " Type: " ++ (pprString scrutTy)
 
 splitNormalizedNonRep ::
@@ -124,7 +144,7 @@ mkFunction ::
   -> CoreSyn.CoreExpr
   -> NormalizeSession CoreSyn.CoreBndr
 mkFunction bndr body = do
-  let bodyTy = CoreUtils.exprType body
+  let bodyTy = getTypeFail body
   bodyId <- cloneVar bndr
   let newId = Var.setVarType bodyId bodyTy
   (lift . lift) $ addGlobalBind nsBindings newId body
@@ -141,4 +161,4 @@ mkBinderFor ::
   -> String 
   -> NormalizeSession Var.Var
 mkBinderFor (Type ty) name = mkTypeVar name (TcType.typeKind ty)
-mkBinderFor expr name      = mkInternalVar name (CoreUtils.exprType expr)
+mkBinderFor expr name      = mkInternalVar name (getTypeFail expr)

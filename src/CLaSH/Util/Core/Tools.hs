@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeOperators    #-}
 module CLaSH.Util.Core.Tools
   ( tyHasFreeTyvars
   , nameToString
   , varToString
+  , varToStringUniq
   , isFun
   , isPoly
   , isApplicable
@@ -17,24 +19,35 @@ module CLaSH.Util.Core.Tools
   , flattenLets
   , exprToVar
   , getValArgs
+  , getIntegerLiteral
+  , fromTfpInt
   )
 where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
+import qualified Control.Monad.State.Strict as State
+import Data.Label ((:->))
+import qualified Data.Label.PureM as Label
 import qualified Data.List as List
+import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
 -- GHC API
 import qualified DataCon
 import qualified CoreFVs
+import CoreSyn (Expr(..),Bind(..),AltCon(..))
 import qualified CoreSyn
 import qualified CoreUtils
+import qualified Literal
+import qualified Module
 import qualified Name
 import qualified OccName
 import qualified TcType
 import qualified TyCon
 import qualified Type
+import qualified TypeRep
 import qualified Var
 import qualified VarSet
 
@@ -54,13 +67,25 @@ nameToString = OccName.occNameString . Name.nameOccName
 varToString :: Var.Var -> String
 varToString = nameToString . Var.varName
 
+varToStringUniq :: Var.Var -> String
+varToStringUniq v = (nameToString . Var.varName) v ++ "_" ++ (show . Var.varUnique) v
+
+getFullString :: Name.NamedThing a => a -> String
+getFullString thing = modstr ++ occstr
+  where
+    name    = Name.getName thing
+    modstr  = case Name.nameModule_maybe name of
+      Nothing -> ""
+      Just mod -> Module.moduleNameString (Module.moduleName mod) ++ "."
+    occstr  = Name.getOccString name
+
 isFun :: CoreSyn.CoreExpr -> Bool
 isFun (CoreSyn.Type _) = False
-isFun expr             = (Type.isFunTy . CoreUtils.exprType) expr
+isFun expr             = (Type.isFunTy . getTypeFail) expr
 
 isPoly :: CoreSyn.CoreExpr -> Bool
 isPoly (CoreSyn.Type _) = False
-isPoly expr             = (Maybe.isJust . Type.splitForAllTy_maybe . CoreUtils.exprType) expr
+isPoly expr             = (Maybe.isJust . Type.splitForAllTy_maybe . getTypeFail) expr
 
 isApplicable :: CoreSyn.CoreExpr -> Bool
 isApplicable expr = isFun expr || isPoly expr
@@ -134,3 +159,44 @@ getValArgs ty args = drop n args
     deepSplitSigmaTy ty = case TcType.tcSplitSigmaTy ty of
       r@([],[],ty') -> ([],[],ty')
       (tyvars, predtypes, ty') -> let (tyvars', predtypes', ty'') = TcType.tcSplitSigmaTy ty' in (tyvars ++ tyvars', predtypes ++ predtypes', ty'')
+
+getIntegerLiteral ::
+  (Error.MonadError String m, State.MonadState s m, Functor m)
+  => s :-> (Map.Map TyCon.TyCon Integer)
+  -> CoreSyn.CoreExpr
+  -> m Integer
+getIntegerLiteral tfpSynLens expr@(App _ _) =
+  case CoreSyn.collectArgs expr of
+    (_, [Lit (Literal.MachInt integer)]) -> return integer
+    (_, [Lit (Literal.MachInt64 integer)]) -> return integer
+    (_, [Lit (Literal.MachWord integer)]) -> return integer
+    (_, [Lit (Literal.MachWord64 integer)]) -> return integer
+    (Var f, [Type decTy, decDict, Type numTy, numDict, arg])
+      | getFullString f == "Types.Data.Num.Ops.fromIntegerT" -> do
+        fromTfpInt tfpSynLens decTy
+
+fromTfpInt :: 
+  (Error.MonadError String m, State.MonadState s m, Functor m)
+  => s :-> (Map.Map TyCon.TyCon Integer)
+  -> Type.Type
+  -> m Integer
+fromTfpInt tfpSynLens ty@(TypeRep.TyConApp tycon args) = case (TyCon.isClosedSynTyCon tycon, null args) of
+  (True,True) -> makeCached tycon tfpSynLens $ do
+    let tyconTy = TyCon.synTyConType tycon
+    fromTfpInt tfpSynLens tyconTy
+  (True,False) -> do
+    let tyconName = Name.getOccString $ TyCon.tyConName tycon
+    Error.throwError $ $(curLoc) ++ "Don't know how to handle type synonyms with arguments when translating type level integer: " ++ tyconName
+  other -> do
+    let tyconName = Name.getOccString $ TyCon.tyConName tycon
+    case tyconName of
+      "Dec" -> fromTfpInt tfpSynLens (head args)
+      ":."  -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return (int0 * 10 + int1)
+      "DecN" -> return 0
+      "Dec4" -> return 4
+      other -> Error.throwError $ $(curLoc) ++ "Don't know how to handle type level integer: " ++ tyconName
+  
+
+fromTfpInt tfpSynLens ty = Error.throwError $ $(curLoc) ++ "Don't know how to handle type level integer: " ++ pprString ty

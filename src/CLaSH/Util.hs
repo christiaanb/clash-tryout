@@ -9,7 +9,7 @@ module CLaSH.Util
 where
 
 import qualified Control.Monad.Error as Error
-import qualified Control.Monad.State as State
+import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (MonadTrans, lift)
 import Data.Map (Map)
 import qualified Data.Map as Map

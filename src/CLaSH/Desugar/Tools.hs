@@ -14,7 +14,7 @@ import qualified Var
 
 -- Internal Modules
 import CLaSH.Desugar.Types
-import CLaSH.Util.Core (mkExternalVar)
+import CLaSH.Util.Core (mkExternalVar,TypedThing(..))
 
 mkDelay ::
   Type.TyVar
@@ -31,7 +31,7 @@ isArrowExpression ::
 	-> Bool
 isArrowExpression expr = res
   where
-	  ty = CoreUtils.exprType expr
+	  ty = getTypeFail expr
 	  res =	case Type.splitTyConApp_maybe ty of
   		Just (tycon, args) -> (Name.getOccString (TyCon.tyConName tycon)) == "Component"
   		Nothing -> False

@@ -33,7 +33,8 @@ import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, makeCachedT2)
 import CLaSH.Util.Core (nameToString)
-import CLaSH.Util.Core.Types (tsTransformCounter, tsUniqSupply, emptyTransformState)
+import CLaSH.Util.Core.Types (tsTransformCounter, tsUniqSupply, emptyTransformState,
+  TypedThing(..))
 import CLaSH.Util.Core.Traverse (startContext)
 import CLaSH.Util.Pretty (pprString)
 
@@ -71,22 +72,20 @@ normalize' nonRepr (bndr:bndrs) = do
   exprMaybe <- (lift . lift) $ getGlobalExpr nsBindings bndr
   case exprMaybe of
     Just expr -> do
-      normalizable <- isNormalizable nonRepr expr
-      if not normalizable
-        then
-          Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 
-            show bndr ++ " is not normalizable (" ++ 
-            show (CoreUtils.exprType expr) ++ "):\n" ++ pprString expr
-        else do
-          normalizedExpr <- makeCachedT2 bndr nsNormalized $
-            normalizeExpr (show bndr) expr
-          let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
-                              (\v -> (not $ Id.isDictId v) && 
-                                     (not $ Id.isDataConWorkId v) && 
-                                     (nameToString $ Var.varName v) `notElem` builtinIds) 
-                              normalizedExpr
-          normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
-          return ((bndr,normalizedExpr):normalizedOthers)
+      normalizable <- (assertNormalizable nonRepr expr) `Error.catchError`
+        ( \e -> do Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 
+                    show bndr ++ " is not normalizable (" ++ 
+                    show (getTypeFail expr) ++ "):\n" ++ e
+        )
+      normalizedExpr <- makeCachedT2 bndr nsNormalized $
+        normalizeExpr (show bndr) expr
+      let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+                          (\v -> (not $ Id.isDictId v) && 
+                                 (not $ Id.isDataConWorkId v) && 
+                                 (nameToString $ Var.varName v) `notElem` builtinIds) 
+                          normalizedExpr
+      normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
+      return ((bndr,normalizedExpr):normalizedOthers)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 
                 show bndr ++ " is not found."
 
@@ -96,7 +95,7 @@ normalizeExpr ::
   String
   -> CoreSyn.CoreExpr
   -> NormalizeSession CoreSyn.CoreExpr
-normalizeExpr bndrName expr = do
+normalizeExpr bndrName expr = trace ("normalizing: " ++ bndrName ++ " :: " ++ pprString (getTypeFail expr)) $ do
   rewritten <- runRewrite normalizeStrategy startContext expr
   expr' <- case rewritten of
     Right (expr',_,_) -> return expr'

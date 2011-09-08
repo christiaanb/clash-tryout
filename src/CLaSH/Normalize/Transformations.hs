@@ -61,6 +61,8 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Label.PureM as Label
 import Language.KURE (liftQ)
 
+import Debug.Trace
+
 -- GHC API
 import qualified BasicTypes
 import qualified Coercion
@@ -83,15 +85,16 @@ import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc)
 import CLaSH.Util.Core ( CoreBinding, hasFreeTyVars, isApplicable, isVar
-  , exprToVar, exprUsesBinders,isFun,isLam,isLet,viewVarOrApp,dataconIndex)
+  , exprToVar, exprUsesBinders,isFun,isLam,isLet,viewVarOrApp,dataconIndex
+  , TypedThing(..))
 import CLaSH.Util.Core.Transform (regenUniques, changed, inlineBind
   , substitute, mkInternalVar, substituteAndClone)
 import CLaSH.Util.Core.Types (CoreContext(..))
 import CLaSH.Util.Pretty (pprString)
 
 betaReduce :: NormalizeStep
-betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute         bndr arg ctx expr >>= (changed "beta")
-                                         | otherwise        = substituteAndClone bndr arg ctx expr >>= (changed "beta")
+betaReduce ctx (App (Lam bndr expr) arg) | Var.isTyVar bndr = substitute         bndr arg ctx expr >>= (changed ("beta: " ++ pprString arg ++ " " ++ pprString (getType arg)))
+                                         | otherwise        = substituteAndClone bndr arg ctx expr >>= (changed ("beta: " ++ pprString arg ++ " " ++ pprString (getType arg)))
 
 betaReduce ctx expr                                         = fail "beta"
 
@@ -184,7 +187,7 @@ inlineTopLevel ctx@((LetBinding _):_) expr | not (isFun expr) =
       case bodyMaybe of
         Just body -> do
           bodyUniqued <- regenUniques ctx body
-          changed "inlineTopLevel" (CoreSyn.mkApps bodyUniqued args)
+          changed "inlineTopLevel" (MkCore.mkCoreApps bodyUniqued args)
         Nothing -> fail "inlineTopLevel"
     _ -> fail "inlineTopLevel"
 
@@ -219,7 +222,7 @@ etaExpand (AppFirst:cs)  expr = fail "eta"
 etaExpand (AppSecond:cs) expr = fail "eta"
 
 etaExpand ctx expr | isFun expr && not (isLam expr) = do
-  let argTy = (fst . Type.splitFunTy . CoreUtils.exprType) expr
+  let argTy = (fst . Type.splitFunTy . getTypeFail) expr
   newId <- liftQ $ mkInternalVar "param" argTy
   changed "eta" (Lam newId (App expr (Var newId)))
 
@@ -229,7 +232,7 @@ etaExpand ctx expr = fail "eta"
 appProp :: NormalizeStep
 appProp ctx (App (Let binds expr) arg)        = changed "appProp" $ Let binds (App expr arg)
 
-appProp ctx (App (Case scrut b ty alts) arg)  = changed "appProp" $ Case scrut b ty' alts'
+appProp ctx expr@(App (Case scrut b ty alts) arg)  = changed "appProp" $ Case scrut b ty' alts'
   where
     alts' = map (\(con,bndrs,expr) -> (con,bndrs, App expr arg)) alts
     ty'   = CoreUtils.applyTypeToArg ty arg
@@ -440,7 +443,7 @@ caseSimpl ctx topExpr@(Case scrut bndr ty alts) | not bndrUsed = do
           let wild = not (VarSet.elemVarSet b freeVars)
           if (not wild) && repr
             then do
-              dcI <- dataconIndex (CoreUtils.exprType scrut) dc
+              dcI <- dataconIndex (getTypeFail scrut) dc
               caseExpr <- mkSelCase scrut dcI i
               return (wildBndrs!!i, Just (b,caseExpr))
             else
@@ -511,7 +514,7 @@ but the other transformations (in particular β-reduction) should make sure
 that the type of those values eventually becomes representable.
 -}
 inlinenonrep :: NormalizeStep
-inlinenonrep = inlineBind "inlinenonrep" (fmap not . isRepr . snd)
+inlinenonrep ctx expr = inlineBind ("inlinenonrep: " ++ pprString expr) (fmap not . isRepr . snd) ctx expr
 
 {- |
 Remove all applications to non-representable arguments, by duplicating the
@@ -600,10 +603,10 @@ inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr
                   let cntFreeVars = length freeVars
                   let fvsDatacon = TysWiredIn.tupleCon BasicTypes.Boxed cntFreeVars
                   let fvsDataconId = DataCon.dataConWorkId fvsDatacon
-                  let newRes = if (cntFreeVars == 1) then res else CoreSyn.mkApps (Var fvsDataconId) (map Type freeVarTypes ++ map Var freeVars)
+                  let newRes = if (cntFreeVars == 1) then res else MkCore.mkCoreApps (Var fvsDataconId) (map Type freeVarTypes ++ map Var freeVars)
                   let newBody = CoreSyn.mkLams bndrs (Let (Rec binds) newRes)
                   f' <- liftQ $ mkFunction f newBody
-                  let newApp = CoreSyn.mkApps (Var f') args
+                  let newApp = MkCore.mkCoreApps (Var f') args
                   resBndr <- liftQ $ mkBinderFor newApp "res"
                   selCases <- liftQ $ if (cntFreeVars == 1) then
                       return [(Var resBndr)]

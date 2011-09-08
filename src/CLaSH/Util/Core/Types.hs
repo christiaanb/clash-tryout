@@ -20,19 +20,26 @@ import Control.Monad.Error (ErrorT)
 import qualified Data.Label
 import Language.KURE (RewriteM)
 
+import Debug.Trace
+
 -- GHC API
 import qualified CoreSyn
 import qualified CoreUtils
 import qualified Id
+import qualified FastString
 import qualified Outputable
 import qualified Type
 import qualified UniqSupply
 import qualified VarEnv
 
+import CLaSH.Util.Pretty (pprString)
+
 type CoreBinding = (CoreSyn.CoreBndr, CoreSyn.CoreExpr)
 
 class Outputable.Outputable t => TypedThing t where
   getType :: t -> Maybe Type.Type
+  getTypeFail :: t -> Type.Type
+  getTypeFail t = case getType t of Just t -> t ; Nothing -> error ("getType")
   
 instance TypedThing CoreSyn.CoreExpr where
   getType (CoreSyn.Type _) = Nothing
@@ -42,7 +49,7 @@ instance TypedThing CoreSyn.CoreBndr where
   getType = return . Id.idType
   
 instance TypedThing Type.Type where
-  getType = return
+  getType = return 
 
 data CoreContext = AppFirst
                  | AppSecond
