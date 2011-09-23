@@ -195,8 +195,48 @@ fromTfpInt tfpSynLens ty@(TypeRep.TyConApp tycon args) = case (TyCon.isClosedSyn
         [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
         return (int0 * 10 + int1)
       "DecN" -> return 0
+      "Dec1" -> return 1
+      "Dec2" -> return 2
+      "Dec3" -> return 3
       "Dec4" -> return 4
+      "Dec5" -> return 5
+      "Dec6" -> return 6
+      "Dec7" -> return 7
+      "Dec8" -> return 8
+      "Dec9" -> return 9
+      "Succ" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ int + 1
+      "Pred" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ int - 1
+      ":+:" -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return $ int0 + int1
+      ":-:" -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return $ int0 - int1
+      ":*:" -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return $ int0 * int1
+      "Pow2" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ 2 ^ int
+      "Mul2" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ 2 * int
+      "Div2" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ int `div` 2
+      "Fac" -> do
+        int <- fromTfpInt tfpSynLens $ head args
+        return $ product [1..int]
+      "Min" -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return $ min int0 int1
+      "Max" -> do
+        [int0,int1] <- mapM (fromTfpInt tfpSynLens) $ take 2 args
+        return $ max int0 int1
       other -> Error.throwError $ $(curLoc) ++ "Don't know how to handle type level integer: " ++ tyconName
-  
 
 fromTfpInt tfpSynLens ty = Error.throwError $ $(curLoc) ++ "Don't know how to handle type level integer: " ++ pprString ty
