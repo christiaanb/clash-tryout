@@ -30,7 +30,7 @@ import CLaSH.Netlist.Constants
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.Core (CoreBinding, varToStringUniq, varToString, getValArgs, dataconIndex, getIntegerLiteral, dataconsFor)
+import CLaSH.Util.Core (CoreBinding, varToStringUniq, varToString, getValArgs, dataconIndex, getIntegerLiteral, dataconsFor, isVar)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -85,10 +85,16 @@ mkConcSm (bndr, Cast expr ty) = mkConcSm (bndr, expr)
 
 mkConcSm (bndr, Var v) = genApplication bndr v []
 
-mkConcSm (bndr, app@(App _ _)) = do
-  let (Var f, args) = CoreSyn.collectArgs app
+mkConcSm (bndr, app@(App _ _)) | isVar (varf) = do
+  let (_, args) = CoreSyn.collectArgs app
   let valArgs       = getValArgs (Var.varType f) args
   genApplication bndr f valArgs
+  where
+    (varf,args) = CoreSyn.collectArgs app
+    (Var f)     = varf
+
+mkConcSm (bndr, app@(App _ _)) = do
+  Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
 mkConcSm (bndr, expr@(Case (Var scrut) b ty [alt])) = do
   let comment = genComment bndr (pprString expr) ([]::[CoreSyn.CoreExpr])

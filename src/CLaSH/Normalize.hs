@@ -79,11 +79,15 @@ normalize' nonRepr (bndr:bndrs) = do
         )
       normalizedExpr <- makeCachedT2 bndr nsNormalized $
         normalizeExpr (show bndr) expr
-      let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
-                          (\v -> (not $ Id.isDictId v) && 
-                                 (not $ Id.isDataConWorkId v) && 
-                                 (nameToString $ Var.varName v) `notElem` builtinIds) 
-                          normalizedExpr
+      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+                        (\v -> (Var.isId v) &&
+                               (not $ Id.isDictId v) && 
+                               (not $ Id.isDFunId v) &&
+                               (not $ Id.isEvVar v) &&
+                               (not $ Id.isDataConWorkId v) &&
+                               (Id.isDataConId_maybe v == Nothing) &&
+                               (nameToString $ Var.varName v) `notElem` builtinIds) 
+                        normalizedExpr
       normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
       return ((bndr,normalizedExpr):normalizedOthers)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 

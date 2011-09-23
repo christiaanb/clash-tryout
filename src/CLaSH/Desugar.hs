@@ -64,13 +64,15 @@ desugar' (bndr:bndrs) = do
   case exprMaybe of
     Just expr -> do
       desugaredExpr <- makeCachedT2 bndr dsDesugared $ desugarExpr (show bndr) expr
-      let usedBndrs    = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
-                              (\v -> (not $ Id.isDictId v) && 
-                                     (not $ Id.isDataConWorkId v) && 
-                                     (not $ Id.isEvVar v) &&
-                                     (Id.isDataConId_maybe v == Nothing) &&
-                                     (nameToString $ Var.varName v) `notElem` builtinIds) 
-                              desugaredExpr
+      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+                        (\v -> (Var.isId v) &&
+                               (not $ Id.isDictId v) && 
+                               (not $ Id.isDataConWorkId v) && 
+                               (not $ Id.isDFunId v) &&
+                               (not $ Id.isEvVar v) &&
+                               (Id.isDataConId_maybe v == Nothing) &&
+                               (nameToString $ Var.varName v) `notElem` builtinIds) 
+                        desugaredExpr
       desugaredUsed <- desugar' usedBndrs
       let desugaredUsedTys = map (getTypeFail . snd) $ filter ((`elem` usedBndrs) . fst) desugaredUsed
       let usedBndrs' = zipWith Var.setVarType usedBndrs desugaredUsedTys

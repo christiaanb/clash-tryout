@@ -584,7 +584,7 @@ only when it is useful.
 inlineNonRepResult :: NormalizeStep
 inlineNonRepResult ctx expr | not (isApplicable expr) && not (hasFreeTyVars expr) = do
   case CoreSyn.collectArgs expr of
-    (Var f, args) | not (Id.isDictId f) -> do
+    (Var f, args) | not (Id.isDictId f || Id.isDFunId f) -> do
       repr <- liftQ $ isRepr expr
       if not repr
         then do
