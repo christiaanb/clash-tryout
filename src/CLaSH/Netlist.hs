@@ -276,6 +276,9 @@ builtinBuilders =
   , ("+"    , (2, genBinaryOperatorSLV "(+)" Plus))
   , ("-"    , (2, genBinaryOperatorSLV "(-)" Minus))
   , ("fromInteger", (1, genFromInteger))
+  , ("+>>"  , (2, genShiftIntoL))
+  , ("vlast", (1, genVLast))
+  , ("singleton", (1, genSingleton))
   ]
   
 genDelay :: BuiltinBuilder
@@ -314,4 +317,29 @@ genFromInteger dst [arg] = do
   let litExpr = mkUncondAssign (dst,dstType) (ExprLit (Just $ htypeSize dstType) $ ExprNum lit)
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
+
+genShiftIntoL :: BuiltinBuilder
+genShiftIntoL dst [Var elArg,Var vecArg] = do
+  dstType@(VecType len etype) <- mkHType vecArg
+  let [elName,vecName] = map varToStringUniq [elArg,vecArg]
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum ((toInteger len) - 1)) (ExprLit Nothing $ ExprNum 1)])
+  let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
+  return (comment:assignExpr,[]) 
+
+genVLast :: BuiltinBuilder
+genVLast dst [Var vecArg] = do
+  dstType <- mkHType dst
+  let vecName = varToStringUniq vecArg
+  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum 0))
+  let comment = genComment dst "vlast" [Var vecArg]
+  return (comment:selExpr,[])
+
+genSingleton :: BuiltinBuilder
+genSingleton dst [Var eArg] = do
+  dstType <- mkHType dst
+  let eName = varToStringUniq eArg
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar eName, ExprVar "\"\""])
+  let comment = genComment dst "singleton" [Var eArg]
+  return (comment:assignExpr,[])
+
   

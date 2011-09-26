@@ -62,6 +62,7 @@ data Edge = PosEdge
          
 data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprVar     Ident
+          | ExprIndex   Ident Expr
           | ExprSlice   Ident Expr Expr
           | ExprConcat  [Expr]
           | ExprCase    Expr [([ConstExpr], Expr)] (Maybe Expr)

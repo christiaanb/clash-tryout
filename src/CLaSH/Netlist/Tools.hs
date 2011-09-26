@@ -202,6 +202,7 @@ htypeSize BitType                 = 1
 htypeSize BoolType                = 1
 htypeSize ClockType               = 1
 htypeSize (UnsignedType len)      = len
+htypeSize (VecType s eType)       = s * htypeSize eType
 htypeSize (SumType _ fields)      = ceiling $ logBase 2 $ fromIntegral $ length fields
 htypeSize (ProductType _ fields)  = sum $ map htypeSize fields
 htypeSize (SPType _ fields)       = conSize + (maximum $ map (sum . map (htypeSize) . snd) fields)

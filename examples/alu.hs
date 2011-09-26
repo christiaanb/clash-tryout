@@ -40,10 +40,10 @@ data AluOp = Add | Sub
 alu Add = (+)
 alu Sub = (-)
 
-delayN s inp = (inp, s)
+delayN s inp = (inp +>> s, vlast s)
 
 topEntity = proc (addr,we,op) -> do
-  rec (t,z) <- delayN ^^^ (0,0)       -< (t',z')
+  rec (t,z) <- delayN ^^^ (singleton (0,0))       -< (t',z')
       t'    <- registerBank ^^^ (0,1) -< (addr,we,z)
       z'    <- arr (uncurry3 alu)     -< (op, t', t)
   returnA -< t'

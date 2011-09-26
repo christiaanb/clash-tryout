@@ -134,9 +134,10 @@ expr_lit _ (ExprBit x)                = quotes (char (bit_char x))
 expr :: Expr -> Doc
 expr (ExprLit mb_sz lit) = expr_lit mb_sz lit
 expr (ExprVar n) = text n
-expr (ExprSlice s h l)
-  | h >= l = text s <> parens (expr h <+> text "downto" <+> expr l)
-  | otherwise = text s <> parens (expr h <+> text "to" <+> expr l)
+expr (ExprIndex s i) = text s <> parens (expr i)
+expr (ExprSlice s h l) = text s <> parens (expr h <+> text "downto" <+> expr l)
+  -- | h >= l = text s <> parens (expr h <+> text "downto" <+> expr l)
+  -- | otherwise = text s <> parens (expr h <+> text "to" <+> expr l)
 
 expr (ExprConcat ss) = hcat $ punctuate (text " & ") (map expr ss)
 expr (ExprUnary op e) = lookupUnary op (expr e)
@@ -182,6 +183,7 @@ slv_type ClockType = text "std_logic"
 slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum $ 0)
 slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
 slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
+slv_type hwtype@(VecType s e) = text "array" <+> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0) <+> text "of" <+> slv_type e
 
 range :: (Expr,Expr) -> Doc
 range (high, low) = parens (expr high <+> text "downto" <+> expr low)
