@@ -55,7 +55,7 @@ Library
   extensions:          TemplateHaskell
 
   -- Packages needed in order to build this package.
-  Build-depends:       base, containers, ghc, fclabels, kure, time, mtl, template-haskell, ghc-paths, th-lift, tfp, pretty
+  Build-depends:       base, containers, ghc, fclabels, kure, time, mtl, template-haskell, ghc-paths, th-lift, tfp, pretty, filepath, directory
   
   -- Modules not exported by this package.
   Other-modules:       CLaSH.Desugar, CLaSH.Driver, CLaSH.Normalize, CLaSH.Util, CLaSH.Desugar.Strategy, CLaSH.Desugar.Tools, CLaSH.Desugar.Transformations, CLaSH.Desugar.Types, CLaSH.Driver.Tools, CLaSH.Driver.Types, CLaSH.Netlist.Constants, CLaSH.Netlist.GenVHDL, CLaSH.Netlist.Tools, CLaSH.Netlist.Types, CLaSH.Normalize.Strategy, CLaSH.Normalize.Tools, CLaSH.Normalize.Transformations, CLaSH.Normalize.Types, CLaSH.Util.Core, CLaSH.Util.GHC, CLaSH.Util.Pretty, CLaSH.Util.Core.Show, CLaSH.Util.Core.Tools, CLaSH.Util.Core.Transform, CLaSH.Util.Core.Traverse, CLaSH.Util.Core.Types, CLaSH.Util.GHC.LoadExtExpr, CLaSH.Util.GHC.LoadModules, CLaSH.Util.Pretty.Core, Data.Sized.Integer, Data.Sized.Index, Data.Sized.Signed, Data.Sized.Unsigned, Data.Sized.Vector
