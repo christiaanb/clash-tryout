@@ -128,6 +128,7 @@ castPropagation ctx (Cast (Let binds expr) ty)       = changed "castPropagation"
 castPropagation ctx (Cast (Case scrut b ty alts) co) = changed "castPropagation" $ Case scrut b (Coercion.applyCo ty co) alts'
   where
     alts' = map (\(con,bndrs,expr) -> (con,bndrs, Cast expr co)) alts
+castPropagation ctx (Cast e@(Lam b expr) co) = changed "castPropagation" e -- error $ "castPropagation, exp:\n" ++ pprString e ++ "\n\nco: " ++ show co
 castPropagation ctx expr = fail "castPropagation"
 
 -- | Mostly useful for state packing and unpacking, but
