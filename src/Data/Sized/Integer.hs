@@ -10,11 +10,11 @@ module Data.Sized.Integer
 import qualified Data.Bits as B
 import Types
 
-newtype (PositiveT nT)    => Signed nT   = Signed Integer
+data (PositiveT nT)    => Signed nT   = Signed Integer
 
-newtype (PositiveT nT)    => Unsigned nT = Unsigned Integer
+data (PositiveT nT)    => Unsigned nT = Unsigned Integer
 
-newtype (PositiveT upper) => Index upper = Index Integer
+data (PositiveT upper) => Index upper = Index Integer
 
 class (B.Bits a) => HWBits a where
   type ShiftSize a :: *
