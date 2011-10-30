@@ -15,19 +15,23 @@ import CLaSH.Util.CoreHW.Syntax
 
 type FreeVars = VarSet
 
-(varFreeVars, termFreeVars, altsFreeVars, valueFreeVars) = mkFreeVars
+termSomeFreeVars ::
+  (Var -> Bool)
+  -> Term
+  -> FreeVars
+termSomeFreeVars f = filterVarSet f . termFreeVars
+
+(varFreeVars, termFreeVars, altsFreeVars) = mkFreeVars
 
 {-# INLINE mkFreeVars #-}
 mkFreeVars ::
   ( Var             -> FreeVars
   , Term            -> FreeVars
   , [(AltCon,Term)] -> FreeVars
-  , Value           -> FreeVars
   )
-mkFreeVars = (unitVarSet, term, alternatives, value)
+mkFreeVars = (unitVarSet, term, alternatives)
   where
     term (Var x)          = unitVarSet x
-    term (Value v)        = value v
     term (TyApp e ty)     = typ ty `unionVarSet` term e
     term (App e x)        = term e `extendVarSet` x
     term (Case e ty alts) = typ ty `unionVarSet` term e `unionVarSet` (alternatives alts)
@@ -35,10 +39,10 @@ mkFreeVars = (unitVarSet, term, alternatives, value)
       where
         (xs,es) = unzip xes
 
-    value (TyLambda x e)  = term e `delVarSet` x
-    value (Lambda x e)    = nonRecBinderFreeVars x (term e)
-    value (Data _ tys xs) = unionVarSets (map typ tys) `unionVarSet` mkVarSet xs
-    value (Literal _)     = emptyVarSet
+    term (TyLambda x e)  = term e `delVarSet` x
+    term (Lambda x e)    = nonRecBinderFreeVars x (term e)
+    term (Data _ tys xs) = unionVarSets (map typ tys) `unionVarSet` mkVarSet xs
+    term (Literal _)     = emptyVarSet
 
     alternatives = unionVarSets . map alternative
     alternative (altcon, e) = altConFreeVars altcon $ term e

@@ -22,8 +22,10 @@ import qualified Var
 
 -- Internal Modules
 import CLaSH.Netlist.Constants (builtinIds)
-import CLaSH.Util.Core (nameToString)
-import CLaSH.Util.GHC (loadExtExpr)
+import CLaSH.Util.Core         (nameToString)
+import CLaSH.Util.CoreHW       (varStringUniq)
+import CLaSH.Util.GHC          (loadExtExpr)
+import CLaSH.Util.Pretty       (pprString)
 
 isTopEntity ::
   Var.Var
@@ -52,9 +54,9 @@ getExternalExpr ::
   -> CoreSyn.CoreBndr
   -> m (Maybe CoreSyn.CoreExpr)
 getExternalExpr globalsLens bndr = do
-  if (not $ Var.isLocalVar bndr) 
+  if (not $ Var.isLocalVar bndr)
     then do
-      exprMaybe <- Error.liftIO $ loadExtExpr (Var.varName bndr) 
+      exprMaybe <- Error.liftIO $ loadExtExpr (Var.varName bndr)
       case exprMaybe of
         (Just expr) -> do
           addGlobalBind globalsLens bndr expr
@@ -62,11 +64,11 @@ getExternalExpr globalsLens bndr = do
         Nothing     -> return Nothing
     else return Nothing
 
-addGlobalBind :: 
+addGlobalBind ::
   (State.MonadState s m)
   => (s :-> Map CoreSyn.CoreBndr CoreSyn.CoreExpr)
-  -> CoreSyn.CoreBndr 
-  -> CoreSyn.CoreExpr 
+  -> CoreSyn.CoreBndr
+  -> CoreSyn.CoreExpr
   -> m ()
-addGlobalBind globalsLens bndr expr = 
+addGlobalBind globalsLens bndr expr =
   Label.modify globalsLens (Map.insert bndr expr)

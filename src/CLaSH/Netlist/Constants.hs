@@ -2,7 +2,7 @@ module CLaSH.Netlist.Constants
   ( builtinIds
   )
 where
-  
+
 -- GHC API
 import qualified CoreSyn
 
@@ -12,5 +12,7 @@ import CLaSH.Netlist.Tools
 
 builtinIds :: [String]
 builtinIds = ["xorB","andB","notB","orB","delay","unpackCString#","I#",
-  "fromInteger","+>>","vlast","-","+","Int#", "singleton", "empty",
-  "+>","smallInteger"]
+  "+>>","vlast","Int#", "singleton", "empty",
+  "+>","smallInteger","eqUnsigned","neqUnsigned","plusUnsigned",
+  "minUnsigned", "timesUnsigned", "negateUnsigned", "unsignedFromInteger",
+  "absUnsigned", "signumUnsigned"]

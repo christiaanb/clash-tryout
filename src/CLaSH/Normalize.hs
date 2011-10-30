@@ -24,35 +24,31 @@ import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import CLaSH.Driver.Types (DriverSession,drUniqSupply)
-import CLaSH.Driver.Tools (getGlobalExpr)
-import CLaSH.Netlist.Constants (builtinIds)
-import CLaSH.Netlist.Types (NetlistState)
+import CLaSH.Driver.Types        (DriverSession, drUniqSupply)
+import CLaSH.Netlist.Constants   (builtinIds)
+import CLaSH.Netlist.Types       (NetlistState)
 import CLaSH.Normalize.Strategy
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
-import CLaSH.Util (curLoc, makeCachedT2)
-import CLaSH.Util.Core (nameToString)
-import CLaSH.Util.Core.Types (tsTransformCounter, tsUniqSupply, emptyTransformState,
-  TypedThing(..))
-import CLaSH.Util.Core.Traverse (startContext)
-import CLaSH.Util.Pretty (pprString)
+import CLaSH.Util                (curLoc, makeCachedT2)
+import CLaSH.Util.CoreHW         (Var, Term, varString, startContext, tsTransformCounter, tsUniqSupply, emptyTransformState, TypedThing(..), termSomeFreeVars)
+import CLaSH.Util.Pretty         (pprString)
 
--- | Normalize a bndr, errors when unsuccesfull 
+-- | Normalize a bndr, errors when unsuccesfull
 normalize ::
-  Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  Map Var Term
   -- ^ Global binder cache
-  -> CoreSyn.CoreBndr
+  -> Var
   -- ^ Bdnr to normalize
-  -> DriverSession ([(CoreSyn.CoreBndr, CoreSyn.CoreExpr)], NetlistState)
-  -- ^ List of normalized binders, and netlist type state 
+  -> DriverSession ([(Var, Term)], NetlistState)
+  -- ^ List of normalized binders, and netlist type state
 normalize globals bndr = do
   uniqSupply <- LabelM.gets drUniqSupply
-  ((retVal,tState),nState) <- State.liftIO $ 
+  ((retVal,tState),nState) <- State.liftIO $
       State.runStateT
-        (State.runStateT 
-          (Error.runErrorT (normalize' False [bndr])) 
-          (emptyTransformState uniqSupply)) 
+        (State.runStateT
+          (Error.runErrorT (normalize' False [bndr]))
+          (emptyTransformState uniqSupply))
         (emptyNormalizeState globals)
   case retVal of
     Left  errMsg -> error errMsg
@@ -66,56 +62,62 @@ normalize globals bndr = do
 
 normalize' ::
   Bool
-  -> [CoreSyn.CoreBndr]
-  -> NormalizeSession [(CoreSyn.CoreBndr, CoreSyn.CoreExpr)]
+  -> [Var]
+  -> NormalizeSession [(Var, Term)]
 normalize' nonRepr (bndr:bndrs) = do
-  exprMaybe <- (lift . lift) $ getGlobalExpr nsBindings bndr
+  globalBindings <- (lift . lift) $ LabelM.gets nsBindings
+  exprMaybe <- getGlobalExpr bndr
   case exprMaybe of
     Just expr -> do
       normalizable <- (assertNormalizable nonRepr expr) `Error.catchError`
-        ( \e -> do Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 
-                    show bndr ++ " is not normalizable (" ++ 
-                    show (getTypeFail expr) ++ "):\n" ++ e
+        ( \e -> do Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++
+                    show bndr ++ " is not normalizable (" ++
+                    show (getTypeFail expr) ++ "):\n" ++ e ++ "\n" ++ pprString expr
         )
       normalizedExpr <- makeCachedT2 bndr nsNormalized $
         normalizeExpr (show bndr) expr
-      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+      let usedBndrs = VarSet.varSetElems $ termSomeFreeVars
                         (\v -> (Var.isId v) &&
-                               (not $ Id.isDictId v) && 
+                               (not $ Id.isDictId v) &&
                                (not $ Id.isDFunId v) &&
                                (not $ Id.isEvVar v) &&
                                (not $ Id.isDataConWorkId v) &&
+                               (Id.isClassOpId_maybe v == Nothing) &&
                                (Id.isDataConId_maybe v == Nothing) &&
-                               (nameToString $ Var.varName v) `notElem` builtinIds) 
+                               (varString v) `notElem` builtinIds &&
+                               (varString v) `notElem` builtinDicts)
                         normalizedExpr
       normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
       return ((bndr,normalizedExpr):normalizedOthers)
-    Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ 
-                show bndr ++ " is not found."
+    Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++
+                show bndr ++ " is not found.: " ++ pprString globalBindings
 
 normalize' _ [] = return []
 
 normalizeExpr ::
   String
-  -> CoreSyn.CoreExpr
-  -> NormalizeSession CoreSyn.CoreExpr
-normalizeExpr bndrName expr = trace ("normalizing: " ++ bndrName ++ " :: " ++ pprString (getTypeFail expr)) $ do
+  -> Term
+  -> NormalizeSession Term
+normalizeExpr bndrName expr = trace ("\nnormalizing: " ++ bndrName) $ do
   rewritten <- runRewrite normalizeStrategy startContext expr
   expr' <- case rewritten of
     Right (expr',_,_) -> return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
-  return expr'
+  trace ("\nafter normalizations:\n" ++ pprString expr') $ return expr'
 
 -- | Normalize a binder (returns Nothing apon failure)
 normalizeMaybe ::
   Bool
   -- ^ Expression result is allowed to be non-representable
-  -> CoreSyn.CoreBndr
+  -> Var
   -- ^ Bndr to normalize
-  -> NormalizeSession (Maybe (CoreSyn.CoreBndr, CoreSyn.CoreExpr))
+  -> NormalizeSession (Maybe (Var, Term))
   -- ^ Normalized binder (if succesfull)
 normalizeMaybe nonRepr bndr = do
-  normBinds <- (normalize' nonRepr [bndr]) `Error.catchError` (\_ -> return [])
+  normBinds <- (normalize' nonRepr [bndr]) `Error.catchError` (\e -> trace ("normalizeMaybe fail: " ++ e) $ return [])
   case normBinds of
     []           -> return Nothing
     (normBind:_) -> return (Just normBind)
+
+builtinDicts :: [String]
+builtinDicts = ["$dPositiveT","$fShowUnsigned","$fEqInteger"]

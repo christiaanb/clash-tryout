@@ -20,8 +20,6 @@ import Control.Monad.Error (ErrorT)
 import qualified Data.Label
 import Language.KURE (RewriteM)
 
-import Debug.Trace
-
 -- GHC API
 import qualified CoreSyn
 import qualified CoreUtils
@@ -40,16 +38,16 @@ class Outputable.Outputable t => TypedThing t where
   getType :: t -> Maybe Type.Type
   getTypeFail :: t -> Type.Type
   getTypeFail t = case getType t of Just t -> t ; Nothing -> error ("getType")
-  
+
 instance TypedThing CoreSyn.CoreExpr where
   getType (CoreSyn.Type _) = Nothing
   getType expr             = Just $ CoreUtils.exprType expr
-  
+
 instance TypedThing CoreSyn.CoreBndr where
   getType = return . Id.idType
-  
+
 instance TypedThing Type.Type where
-  getType = return 
+  getType = return
 
 data CoreContext = AppFirst
                  | AppSecond
@@ -65,7 +63,7 @@ data TransformState = TransformState
   , _tsBndrSubst        :: VarEnv.VarEnv CoreSyn.CoreBndr
   , _tsUniqSupply       :: UniqSupply.UniqSupply
   }
-  
+
 Data.Label.mkLabels [''TransformState]
 
 type TransformSession m = ErrorT String (StateT TransformState m)

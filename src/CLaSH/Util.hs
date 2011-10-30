@@ -31,6 +31,12 @@ import Outputable
 import Unique
 import UniqSupply
 
+makeCached ::
+  (State.MonadState s m, Ord k)
+  => k
+  -> s :-> (Map k v)
+  -> m v
+  -> m v
 makeCached key lens create = do
   cache <- Label.gets lens
   case Map.lookup key cache of
@@ -116,4 +122,11 @@ secondM ::
   -> (a, b)
   -> f (a, c)
 secondM f (x,y) = fmap ((,) x) (f y)
+
+firstM ::
+  Functor f
+  => (a -> f c)
+  -> (a, b)
+  -> f (c, b)
+firstM f (x,y) = fmap (flip (,) $ y) (f x)
 

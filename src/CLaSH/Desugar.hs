@@ -11,9 +11,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Label as Label
 import qualified Data.Label.PureM as LabelM
+import Debug.Trace (trace)
 import Language.KURE (runRewrite)
-
-import Debug.Trace
 
 -- GHC API
 import qualified CoreFVs
@@ -42,11 +41,11 @@ desugar ::
   -> DriverSession (Map CoreSyn.CoreBndr CoreSyn.CoreExpr)
 desugar globals bndr = do
   uniqSupply <- LabelM.gets drUniqSupply
-  ((retVal,tState),dState) <- State.liftIO $ 
+  ((retVal,tState),dState) <- State.liftIO $
       State.runStateT
-        (State.runStateT 
-          (Error.runErrorT (desugar' [bndr])) 
-          (emptyTransformState uniqSupply)) 
+        (State.runStateT
+          (Error.runErrorT (desugar' [bndr]))
+          (emptyTransformState uniqSupply))
         (emptyDesugarState globals)
   case retVal of
     Left  errMsg -> error errMsg
@@ -64,14 +63,15 @@ desugar' (bndr:bndrs) = do
   case exprMaybe of
     Just expr -> do
       desugaredExpr <- makeCachedT2 bndr dsDesugared $ desugarExpr (show bndr) expr
-      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars 
+      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars
                         (\v -> (Var.isId v) &&
-                               (not $ Id.isDictId v) && 
-                               (not $ Id.isDataConWorkId v) && 
+                               (not $ Id.isDictId v) &&
+                               (not $ Id.isDataConWorkId v) &&
+                               (Id.isClassOpId_maybe v == Nothing) &&
                                (not $ Id.isDFunId v) &&
                                (not $ Id.isEvVar v) &&
                                (Id.isDataConId_maybe v == Nothing) &&
-                               (nameToString $ Var.varName v) `notElem` builtinIds) 
+                               (nameToString $ Var.varName v) `notElem` builtinIds)
                         desugaredExpr
       desugaredUsed <- desugar' usedBndrs
       let desugaredUsedTys = map (getTypeFail . snd) $ filter ((`elem` usedBndrs) . fst) desugaredUsed

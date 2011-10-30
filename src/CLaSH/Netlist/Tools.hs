@@ -15,8 +15,6 @@ module CLaSH.Netlist.Tools
   , dataconToExpr
   , htypeSize
   , genComment
-  , argsToExpr
-  , argToExpr
   , mkVHDLBasicId
   , toSLV
   , fromSLV
@@ -31,11 +29,8 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
-import Debug.Trace
-
 -- GHC API
 import qualified CoreSubst
-import qualified CoreSyn
 import qualified DataCon
 import qualified Id
 import qualified Name
@@ -48,19 +43,19 @@ import qualified VarSet
 -- internal Module
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.Core (CoreBinding, TypedThing(..), nameToString, varToStringUniq, tyHasFreeTyvars,
-  flattenLets, fromTfpInt)
+import CLaSH.Util.CoreHW (CoreBinding, TypedThing(..), Term(..), Var, nameString, varStringUniq, tyHasFreeTyVars,
+  flattenLets, fromTfpInt, collectBndrs, dataConIndex)
 import CLaSH.Util.Pretty (pprString)
 
-isReprType :: 
-  Type.Type 
+isReprType ::
+  Type.Type
   -> NetlistSession Bool
 isReprType ty = do
   ty <- (mkHType ty) `Error.catchError` (\e -> return $ Invalid e)
   return $ case ty of
     Invalid e -> False
     _         -> True
-    
+
 assertReprType ::
   Type.Type
   -> NetlistSession Bool
@@ -72,7 +67,7 @@ assertReprType ty = do
 
 -- | Turn a Core type into a HWType. Returns either an error message if
 -- the type was not representable, or the HType generated.
-mkHType :: (TypedThing t, Outputable.Outputable t) => 
+mkHType :: (TypedThing t, Outputable.Outputable t) =>
   t
   -> NetlistSession HWType
 mkHType tything =
@@ -83,7 +78,7 @@ mkHType tything =
 mkHType' ::
   Type.Type
   -> NetlistSession HWType
-mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create HWType out of type that has free type variables: " ++ pprString ty)
+mkHType' ty | tyHasFreeTyVars ty = Error.throwError ($(curLoc) ++ "Cannot create HWType out of type that has free type variables: " ++ pprString ty)
             | otherwise = do
   case Type.splitTyConApp_maybe ty of
     Just (tyCon, args) -> do
@@ -101,6 +96,8 @@ mkHType' ty | tyHasFreeTyvars ty = Error.throwError ($(curLoc) ++ "Cannot create
         "Bit"       -> return BitType
         "Bool"      -> return BoolType
         "()"        -> return UnitType
+        "Int#"      -> return IntegerType
+        "ByteArray#" -> return ByteArrayType
         "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
         otherwise -> mkAdtHWType tyCon args
     Nothing -> Error.throwError ($(curLoc) ++ "Do not know how to make HWType out of type: " ++ pprString ty)
@@ -113,7 +110,7 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
     [] -> Error.throwError ($(curLoc) ++ "Only custom adt's are supported: " ++ pprString tyCon ++ pprString args)
     dcs -> do
       let argTyss = map DataCon.dataConRepArgTys dcs
-      let sumTy   = SumType name $ map (nameToString . DataCon.dataConName) dcs
+      let sumTy   = SumType name $ map (nameString . DataCon.dataConName) dcs
       case (concat argTyss) of
         [] -> return sumTy
         _  -> do
@@ -122,10 +119,10 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
           case (dcs, map (filter (/= UnitType)) elemHTyss) of
             ([dc], [[elemHTy]]) -> return elemHTy
             ([dc], [elemHTys]) -> return $ ProductType name elemHTys
-            (dcs,elemHTyss)     -> return $ SPType name $ zip (map (nameToString . DataCon.dataConName) dcs) elemHTyss --Error.throwError ($(curLoc) ++ "Cannot convert SumOfProduct Types to HWTypes: " ++ pprString tyCon)
+            (dcs,elemHTyss)     -> return $ SPType name $ zip (map (nameString . DataCon.dataConName) dcs) elemHTyss
   where
-    name = nameToString $ TyCon.tyConName tyCon
-    
+    name = nameString $ TyCon.tyConName tyCon
+
     tyvars                  = TyCon.tyConTyVars tyCon
     tyVarArgMap             = zip tyvars args
     dataConTyVars           = (concatMap VarSet.varSetElems) $ (map Type.tyVarsOfType) $ (concatMap DataCon.dataConRepArgTys) $ TyCon.tyConDataCons tyCon
@@ -135,14 +132,14 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
     subst = CoreSubst.extendTvSubstList CoreSubst.emptySubst $ map dataConTyVarArg dataConTyVars
 
 splitNormalized ::
-  CoreSyn.CoreExpr
-  -> NetlistSession ([CoreSyn.CoreBndr], [CoreBinding], CoreSyn.CoreBndr)
+  Term
+  -> NetlistSession ([Var], [CoreBinding], Var)
 splitNormalized expr = do
-  let (args, letExpr) = CoreSyn.collectBinders expr
+  let (args, letExpr) = collectBndrs expr
   let (binds,resExpr) = flattenLets letExpr
   case (args,binds,resExpr) of
-    (args, binds, CoreSyn.Var res) -> return (args, binds, res)
-    _                              -> Error.throwError $ $(curLoc) ++ "not in normal form: " ++ (pprString expr)
+    (args, binds, Var res) -> return (args, binds, res)
+    _                      -> Error.throwError $ $(curLoc) ++ "not in normal form: " ++ (pprString expr)
 
 hasNonEmptyType ::
   (TypedThing t, Outputable.Outputable t)
@@ -155,31 +152,31 @@ hasNonEmptyType thing = do
     _ -> return True
 
 mkUncondAssign ::
-  (CoreSyn.CoreBndr, HWType)
+  (Var, HWType)
   -> Expr
   -> [Decl]
 mkUncondAssign dst expr = mkAssign dst Nothing expr
 
 mkAssign ::
-  (CoreSyn.CoreBndr, HWType)
+  (Var, HWType)
   -> Maybe (Expr, Expr)
   -> Expr
   -> [Decl]
-mkAssign (dst,dstTy) cond falseExpr = [NetDecl dstName dstTy Nothing, NetAssign dstName assignExpr]
+mkAssign (dst,dstTy) cond falseExpr = [NetAssign dstName assignExpr]
   where
-    dstName    = varToStringUniq dst
+    dstName    = varStringUniq dst
     assignExpr = case cond of
       Nothing -> falseExpr
       Just (condExpr,trueExpr) -> ExprCond condExpr trueExpr falseExpr
-      
+
 varToExpr ::
-  Var.Var
+  Var
   -> NetlistSession Expr
 varToExpr var = case Id.isDataConWorkId_maybe var of
   Just dc -> do
     varTy <- mkHType var
     dataconToExpr varTy dc
-  Nothing -> return $ ExprVar $ varToStringUniq var
+  Nothing -> return $ ExprVar $ varStringUniq var
 
 dataconToExpr ::
   HWType
@@ -189,10 +186,13 @@ dataconToExpr hwType dc = do
   let dcName = DataCon.dataConName dc
   case hwType of
     BitType -> return $ ExprLit Nothing $ ExprBit (case Name.getOccString dcName of "H" -> H; "L" -> L ; other -> error $ "other: " ++ show other)
-    other -> error $ show other
+    SPType _ args -> do
+      let conSize  = ceiling $ logBase 2 $ fromIntegral $ length args
+      let conIndex = Maybe.fromJust . List.elemIndex (nameString dcName) . map fst $ args
+      return $ ExprLit (Just conSize) . ExprNum . toInteger $ conIndex
 
 isNormalizedBndr ::
-  CoreSyn.CoreBndr
+  Var
   -> NetlistSession Bool
 isNormalizedBndr bndr = fmap (Map.member bndr) $ Label.gets nlNormalized
 
@@ -226,59 +226,47 @@ mkSliceExpr ::
   -> Expr
 mkSliceExpr varId (left,right) = ExprSlice varId (ExprLit Nothing (ExprNum $ toInteger left)) (ExprLit Nothing (ExprNum $ toInteger right))
 
-argsToExpr ::
-  [CoreSyn.CoreExpr]
-  -> NetlistSession [Expr]
-argsToExpr = mapM argToExpr
-
-argToExpr ::
-  CoreSyn.CoreExpr
-  -> NetlistSession Expr
-argToExpr arg = case arg of
-  CoreSyn.Var v -> varToExpr v 
-  _     -> Error.throwError $ $(curLoc) ++ "Not in normal form: found non-Var arg: " ++ pprString arg
-
 genBinaryOperator ::
   String
   -> BinaryOp
-  -> CoreSyn.CoreBndr
-  -> [CoreSyn.CoreExpr]
+  -> Var
+  -> [Var]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genBinaryOperator opS op dst args = do
   dstType     <- mkHType dst
-  [arg1,arg2] <- argsToExpr args
+  [arg1,arg2] <- mapM varToExpr args
   let comment = genComment dst opS args
   return (comment:(mkUncondAssign (dst,dstType) (ExprBinary op arg1 arg2)), [])
 
 genBinaryOperatorSLV ::
   String
   -> BinaryOp
-  -> CoreSyn.CoreBndr
-  -> [CoreSyn.CoreExpr]
+  -> Var
+  -> [Var]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genBinaryOperatorSLV opS op dst args = do
   dstType     <- mkHType dst
   argTys      <- mapM mkHType args
-  [arg1,arg2] <- fmap (zipWith fromSLV argTys) $ argsToExpr args
+  [arg1,arg2] <- fmap (zipWith fromSLV argTys) $ mapM varToExpr args
   let comment = genComment dst opS args
   return (comment:(mkUncondAssign (dst,dstType) (toSLV dstType $ ExprBinary op arg1 arg2)), [])
 
 genUnaryOperator ::
   String
   -> UnaryOp
-  -> CoreSyn.CoreBndr
-  -> [CoreSyn.CoreExpr]
+  -> Var
+  -> [Var]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genUnaryOperator opS op dst [arg] = do
   dstType <- mkHType dst
-  arg'    <- argToExpr arg
+  arg'    <- varToExpr arg
   let comment = genComment dst opS [arg]
   return (comment:(mkUncondAssign (dst,dstType) (ExprUnary op arg')), [])
 
 genComment ::
-  CoreSyn.CoreBndr
+  Var
   -> String
-  -> [CoreSyn.CoreExpr]
+  -> [Var]
   -> Decl
 genComment dst f args = CommentDecl $ pprString dst ++ " = " ++ f ++ (concatMap (\x -> " " ++ pprString x) args) ++ " :: " ++ ((pprString . Maybe.fromJust . getType) dst)
 

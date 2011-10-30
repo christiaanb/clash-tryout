@@ -1,6 +1,6 @@
 module CLaSH.Util.CoreHW.Syntax
   ( module CLaSH.Util.CoreHW.Syntax
-  , DataCon, Var, Literal, Type
+  , DataCon, Var, TyVar, Literal, Type
   )
 where
 
@@ -11,22 +11,15 @@ import Type    (Type)
 import Var     (Var, TyVar)
 
 data Term
-  = Var    Var
-  | Value  Value
-  | TyApp  Term         Type
-  | App    Term         Var
-  | OpApp  PrimOp       [Term]
-  | Case   Term         Type [(AltCon,Term)]
-  | LetRec [(Var,Term)] Term
-
-data Value
-  = Literal  Literal
-  | TyLambda TyVar   Term
-  | Lambda   Var     Term
-  | Data     DataCon [Type] [Var]
-
-data PrimOp
-  = PrimCall Var
+  = Var      Var
+  | Literal  Literal
+  | TyLambda TyVar        Term
+  | Lambda   Var          Term
+  | Data     DataCon      [Type] [Var]
+  | TyApp    Term         Type
+  | App      Term         Var
+  | Case     Term         Type   [(AltCon,Term)]
+  | LetRec   [(Var,Term)] Term
 
 data AltCon
   = DataAlt    DataCon [TyVar] [Var]

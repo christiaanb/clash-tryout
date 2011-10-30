@@ -8,9 +8,11 @@ import qualified Data.Label
 import Data.Map (Map,empty)
 
 -- GHC API
-import qualified CoreSyn
 import qualified TyCon
 import qualified Type
+
+-- Internal Modules
+import CLaSH.Util.CoreHW.Syntax (Term,Var)
 
 newtype OrdType = OrdType Type.Type
 instance Eq OrdType where
@@ -22,6 +24,8 @@ type Size = Int
 
 data HWType = BitType
             | BoolType
+            | IntegerType
+            | ByteArrayType
             | SignedType Size
             | UnsignedType Size
             | VecType Size HWType
@@ -41,7 +45,7 @@ data Module = Module {
   , _modOutptus :: [(Ident,HWType)]
   , _modDecls   :: [Decl]
   } deriving (Eq,Ord,Show)
-  
+
 data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
@@ -50,7 +54,7 @@ data Decl = NetDecl     Ident HWType (Maybe Expr)
   deriving (Eq,Ord,Show)
 
 type ConstExpr = Expr
-          
+
 data Event = Event Expr Edge
   deriving (Eq,Ord,Show)
 
@@ -58,8 +62,8 @@ data Edge = PosEdge
           | NegEdge
           | AsyncHigh
           | AsyncLow
-  deriving (Eq,Ord,Show) 
-         
+  deriving (Eq,Ord,Show)
+
 data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprVar     Ident
           | ExprIndex   Ident Expr
@@ -71,7 +75,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprBinary  BinaryOp Expr Expr
           | ExprFunCall Ident [Expr]
   deriving (Eq,Ord,Show)
-          
+
 data ExprLit = ExprNum       Integer
              | ExprBit       Bit
              | ExprBitVector [Bit]
@@ -86,7 +90,7 @@ data Stmt = Assign LValue Expr
           | Seq [Stmt]
           | FunCallStmt Ident [Expr]
   deriving (Eq,Ord,Show)
-          
+
 type LValue = Expr
 
 data UnaryOp = LNeg
@@ -95,11 +99,11 @@ data UnaryOp = LNeg
 data BinaryOp = Plus | Minus | Times | Equals | NotEquals | And | Or | Xor
   deriving (Eq,Ord,Show)
 
-data NetlistState = NetlistState 
+data NetlistState = NetlistState
   { _nlTypes      :: Map OrdType HWType
   , _nlModCnt     :: Integer
-  , _nlMods       :: Map CoreSyn.CoreBndr Module
-  , _nlNormalized :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  , _nlMods       :: Map Var Module
+  , _nlNormalized :: Map Var Term
   , _nlTfpSyn     :: Map TyCon.TyCon Integer
   }
 

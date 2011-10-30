@@ -5,11 +5,11 @@ module CLaSH.Util.Pretty
 where
 
 -- GHC API
-import Outputable (Outputable, showSDocDump, ppr)
+import Outputable (Outputable, showSDocDump, showSDoc, ppr)
 
 -- Internal Modules
 import CLaSH.Util.Pretty.Core
 import CLaSH.Util.Pretty.CoreHW
 
 pprString :: (Outputable x) => x -> String
-pprString = showSDocDump . ppr
+pprString = showSDoc . ppr

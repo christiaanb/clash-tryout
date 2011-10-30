@@ -1,0 +1,94 @@
+module CLaSH.CoreHW
+  (coreToCoreHW)
+where
+
+-- External Modules
+import qualified Control.Monad.Error        as Error
+import qualified Control.Monad.Identity     as Identity
+import qualified Control.Monad.State.Strict as State
+import Control.Monad.Trans                     (lift)
+import qualified Data.Label                 as Label
+import qualified Data.Label.PureM           as LabelM
+import Data.Map                                (Map)
+import qualified Data.Map                   as Map
+import qualified Data.Maybe                 as Maybe
+
+-- GHC API
+import qualified CoreSyn
+import qualified Id
+import qualified Var
+import qualified VarSet
+
+-- Internal Modules
+import CLaSH.Driver.Tools             (getGlobalExpr)
+import CLaSH.Driver.Types             (DriverSession, drUniqSupply)
+import CLaSH.Netlist.Constants        (builtinIds)
+import CLaSH.Util                     (UniqSupply, curLoc, makeCached)
+import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm, runParseM)
+import CLaSH.Util.CoreHW.FreeVars     (termFreeVars)
+import CLaSH.Util.CoreHW.Syntax       (Var, Term)
+import CLaSH.Util.CoreHW.Tools        (termType,varString,varStringUniq)
+import CLaSH.Util.CoreHW.Transform    (regenUniques)
+import CLaSH.Util.CoreHW.Types        (TransformSession, emptyTransformState, tsUniqSupply)
+import CLaSH.Util.Pretty
+
+data CoreHWState = CoreHWState
+  { _chwTranslated :: Map Var Term
+  , _chwBindings   :: Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  , _chwUniqSupply :: UniqSupply
+  }
+
+Label.mkLabels [''CoreHWState]
+
+type CoreHWSession = State.StateT CoreHWState IO
+
+coreToCoreHW ::
+  Map CoreSyn.CoreBndr CoreSyn.CoreExpr
+  -> CoreSyn.CoreBndr
+  -> DriverSession (Map Var Term)
+coreToCoreHW globals bndr = do
+  uniqSupply <- LabelM.gets drUniqSupply
+  (_,chwState) <- State.liftIO $
+    State.runStateT (coreToCoreHW' [bndr]) (CoreHWState Map.empty globals uniqSupply)
+  LabelM.puts drUniqSupply (Label.get chwUniqSupply chwState)
+  return $ Label.get chwTranslated chwState
+
+coreToCoreHW' ::
+  [CoreSyn.CoreBndr]
+  -> CoreHWSession [(Var, Term)]
+coreToCoreHW' [] = return []
+coreToCoreHW' (bndr:bndrs) = do
+  exprMaybe <- getGlobalExpr chwBindings bndr
+  case exprMaybe of
+    Just expr -> do
+      term <- makeCached bndr chwTranslated $ coreToCoreHW'' expr
+      let usedFreeBndrs = VarSet.varSetElems $ VarSet.filterVarSet
+                            (\v -> (Var.isId v) &&
+                                   (not $ Id.isDataConWorkId v) &&
+                                   (Id.isDataConId_maybe v == Nothing) &&
+                                   (Id.isClassOpId_maybe v == Nothing) &&
+                                   (varString v) `notElem` builtinIds  &&
+                                   (varString v) `notElem` builtinDicts)
+                            (termFreeVars term)
+      translatedUsed <- coreToCoreHW' usedFreeBndrs
+      translatedOthers <- coreToCoreHW' bndrs
+      return ((bndr,term):(translatedUsed ++ translatedOthers))
+    Nothing -> fail $ $(curLoc) ++ "Expr belonging to binder: " ++ varStringUniq bndr ++ " is not found."
+
+coreToCoreHW'' ::
+  CoreSyn.CoreExpr
+  -> CoreHWSession Term
+coreToCoreHW'' expr = do
+  us <- LabelM.gets chwUniqSupply
+  let (us',term) = runParseM us (coreExprToTerm expr)
+  let (retVal,tState) = Identity.runIdentity $
+        State.runStateT
+          (Error.runErrorT (regenUniques term))
+          (emptyTransformState us')
+  LabelM.puts chwUniqSupply (Label.get tsUniqSupply tState)
+  case retVal of
+    Left errMsg -> fail errMsg
+    Right term' -> return term'
+
+builtinDicts :: [String]
+builtinDicts = ["$dPositiveT","$fShowUnsigned","$fEqInteger"]

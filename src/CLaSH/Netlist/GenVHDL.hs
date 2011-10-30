@@ -28,7 +28,7 @@ imports others = vcat
       text ("use " ++ other) <> semi
     | other <- others
     ]
-    
+
 entity :: Module -> Doc
 entity m = text "entity" <+> text (_modName m) <+> text "is" $$
             nest 2 (text "port" <> parens (vcat $ punctuate semi ports) <> semi) $$
@@ -46,7 +46,12 @@ architecture m = text "architecture" <+> text "str" <+> text "of" <+>  text (_mo
 
 decls :: [Decl] -> Doc
 decls [] = empty
-decls ds = (vcat $ punctuate semi $ catMaybes $ map decl ds) <> semi
+decls ds = let
+    dsDoc = (vcat $ punctuate semi $ catMaybes $ map decl ds)
+  in
+    if (isEmpty dsDoc)
+      then empty
+      else dsDoc <> semi
 
 decl :: Decl -> Maybe Doc
 decl (NetDecl i r Nothing) = Just $
@@ -118,9 +123,7 @@ to_bits size val = map (\x -> if odd x then H else L)
 bit_char :: Bit -> Char
 bit_char H = '1'
 bit_char L = '0'
-bit_char U = 'U'  -- 'U' means uninitialized,
-                  -- 'X' means forced to unknown.
-                  -- not completely sure that 'U' is the right choice here.
+bit_char U = 'U'
 bit_char Z = 'Z'
 
 bits :: [Bit] -> Doc
@@ -136,9 +139,6 @@ expr (ExprLit mb_sz lit) = expr_lit mb_sz lit
 expr (ExprVar n) = text n
 expr (ExprIndex s i) = text s <> parens (expr i)
 expr (ExprSlice s h l) = text s <> parens (expr h <+> text "downto" <+> expr l)
-  -- | h >= l = text s <> parens (expr h <+> text "downto" <+> expr l)
-  -- | otherwise = text s <> parens (expr h <+> text "to" <+> expr l)
-
 expr (ExprConcat ss) = hcat $ punctuate (text " & ") (map expr ss)
 expr (ExprUnary op e) = lookupUnary op (expr e)
 expr (ExprBinary op a b) = lookupBinary op (expr a) (expr b)
@@ -170,7 +170,6 @@ binOp Minus = "-"
 mkSensitivityList :: Decl -> [Expr]
 mkSensitivityList (ProcessDecl evs) = nub event_names
   where event_names =
-	 	--   AJG: This is now *only* based on the 'Event' vars, nothing else.
 		map (\ (e,_) -> case e of
 				 Event (ExprVar name) _ -> ExprVar name
 				 _ -> error $ "strange form for mkSensitivityList " ++ show e
@@ -180,10 +179,11 @@ slv_type :: HWType -> Doc
 slv_type BitType = text "std_logic"
 slv_type BoolType = text "std_logic"
 slv_type ClockType = text "std_logic"
-slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum $ 0)
-slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
-slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum $ 0)
-slv_type hwtype@(VecType s e) = text "array" <+> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0) <+> text "of" <+> slv_type e
+slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
+slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
+slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
+slv_type hwtype@(SPType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype -1, ExprLit Nothing $ ExprNum 0)
+--slv_type hwtype@(VecType s e) = text "array" <+> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0) <+> text "of" <+> slv_type e
 
 range :: (Expr,Expr) -> Doc
 range (high, low) = parens (expr high <+> text "downto" <+> expr low)

@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 module CLaSH.Util.Pretty.CoreHW
   ()
 where
@@ -20,10 +21,13 @@ asPrettyFunction x = PrettyFunction (\prec -> pprPrec prec x)
 instance Outputable Term where
   pprPrec prec e = case e of
     Var x           -> pprPrec prec x
-    Value v         -> pprPrec prec v
+    TyLambda x e    -> pprPrecLam prec [x] e
+    Lambda x e      -> pprPrecLam prec [x] e
+    Data dc tys xs  -> pprPrecApps prec dc (map asPrettyFunction tys ++ map asPrettyFunction xs)
+    Literal l       -> pprPrec prec l
     TyApp e ty      -> pprPrecApp prec e ty
     App e x         -> pprPrecApp prec e x
-    Case e _ty alts -> pprPrecCase prec e (map (second id) alts)
+    Case e  _ alts -> pprPrecCase prec e (map (second id) alts)
     LetRec xes e    -> pprPrecLetRec prec (map (second id) xes) e
 
 instance Outputable AltCon where
@@ -31,13 +35,6 @@ instance Outputable AltCon where
         DataAlt dc as xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) as ++ map (pprBndr CaseBind) xs)
         LiteralAlt l     -> ppr l
         DefaultAlt       -> text "_"
-
-instance Outputable Value where
-  pprPrec prec v = case v of
-    TyLambda x e   -> pprPrecLam prec [x] e
-    Lambda x e     -> pprPrecLam prec [x] e
-    Data dc tys xs -> pprPrecApps prec dc (map asPrettyFunction tys ++ map asPrettyFunction xs)
-    Literal l      -> pprPrec prec l
 
 appPrec, opPrec, noPrec :: Num a => a
 appPrec = 2 -- Argument of a function application
@@ -69,7 +66,7 @@ pprBndr bs x = prettyParen needsParens $ ppr x <+> text "::" <+> ppr (varType x)
                                  LetBind    -> False
 
 pprPrecLam :: Outputable a => Rational -> [Var] -> a -> SDoc
-pprPrecLam prec xs e = prettyParen (prec > noPrec) $ text "\\" <> hsep [pprBndr LambdaBind y | y <- xs] <+> text "->" <+> pprPrec noPrec e
+pprPrecLam prec xs e = prettyParen (prec > noPrec) $ text "\\" <> hsep [pprBndr LambdaBind y | y <- xs] <+> (text "->") $+$ (pprPrec noPrec e)
 
 pprPrecApps :: (Outputable a, Outputable b) => Rational -> a -> [b] -> SDoc
 pprPrecApps prec e1 es2 = prettyParen (not (null es2) && prec >= appPrec) $ pprPrec opPrec e1 <+> hsep (map (pprPrec appPrec) es2)

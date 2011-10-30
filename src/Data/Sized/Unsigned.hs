@@ -42,12 +42,36 @@ mask :: forall nT . PositiveT nT
 mask _ = B.bit (fromIntegerT (undefined :: nT)) - 1
 
 instance PositiveT nT => Eq (Unsigned nT) where
-    (Unsigned x) == (Unsigned y) = x == y
-    (Unsigned x) /= (Unsigned y) = x /= y
+  (==) = eqUnsigned
+  (/=) = neqUnsigned
+    --(Unsigned x) == (Unsigned y) = x == y
+    --(Unsigned x) /= (Unsigned y) = x /= y
+
+eqUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+  -> Bool
+eqUnsigned (Unsigned x) (Unsigned y) = x == y
+
+neqUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+  -> Bool
+neqUnsigned (Unsigned x) (Unsigned y) = x /= y
 
 instance PositiveT nT => Show (Unsigned nT) where
-    showsPrec prec n =
-        showsPrec prec $ toInteger n
+  showsPrec = showsPrecUnsigned
+    --showsPrec prec n =
+    --    showsPrec prec $ toInteger n
+
+showsPrecUnsigned ::
+  PositiveT nT
+  => Int
+  -> Unsigned nT
+  -> ShowS
+showsPrecUnsigned prec (Unsigned n) = showsPrec prec $ toInteger n
 
 instance PositiveT nT => Read (Unsigned nT) where
     readsPrec prec str =
@@ -68,7 +92,7 @@ instance PositiveT nT => Enum (Unsigned nT) where
     pred x
        | x == minBound  = error $ "Enum.succ{Unsigned " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `pred' of minBound"
        | otherwise      = x - 1
-    
+
     fromEnum (Unsigned x)
         | x > toInteger (maxBound :: Int) =
             error $ "Enum.fromEnum{Unsigned " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `fromEnum' on Unsigned greater than maxBound :: Int"
@@ -85,30 +109,91 @@ instance PositiveT nT => Enum (Unsigned nT) where
             fromInteger $ toInteger x
 
 instance PositiveT nT => Num (Unsigned nT) where
-    (Unsigned a) + (Unsigned b) =
-        fromInteger $ a + b
-    (Unsigned a) * (Unsigned b) =
-        fromInteger $ a * b
-    negate s@(Unsigned n) =
-        fromInteger $ (n `B.xor` mask (sizeT s)) + 1
-    a - b =
-        a + (negate b)
+  (+)         = plusUnsigned
+  (-)         = minUnsigned
+  (*)         = timesUnsigned
+  negate      = negateUnsigned
+  fromInteger = unsignedFromInteger
+  abs         = absUnsigned
+  signum      = signumUnsigned
+--    (Unsigned a) + (Unsigned b) =
+--        fromInteger $ a + b
+--    (Unsigned a) * (Unsigned b) =
+--        fromInteger $ a * b
+--    negate s@(Unsigned n) =
+--        fromInteger $ (n `B.xor` mask (sizeT s)) + 1
+--    a - b =
+--        a + (negate b)
 
-    fromInteger n
-      | n > 0 =
-        Unsigned $ n B..&. mask (undefined :: nT)
-    fromInteger n
-      | n < 0 =
-        negate $ fromInteger $ negate n
-    fromInteger _ =
-        Unsigned 0
+--    fromInteger n
+--      | n > 0 =
+--        Unsigned $ n B..&. mask (undefined :: nT)
+--    fromInteger n
+--      | n < 0 =
+--        negate $ fromInteger $ negate n
+--    fromInteger _ =
+--        Unsigned 0
 
-    abs s = s
-    signum s
-      | s == 0 =
-          0
-      | otherwise =
-          1
+--    abs s = s
+--    signum s
+--      | s == 0 =
+--          0
+--      | otherwise =
+--          1
+
+plusUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+  -> Unsigned nT
+plusUnsigned (Unsigned a) (Unsigned b) = unsignedFromInteger $ (a + b)
+
+minUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+  -> Unsigned nT
+minUnsigned (Unsigned a) (Unsigned b) = unsignedFromInteger $ (a - b)
+
+timesUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+  -> Unsigned nT
+timesUnsigned (Unsigned a) (Unsigned b) = unsignedFromInteger $ (a * b)
+
+negateUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+negateUnsigned s@(Unsigned n) =
+  unsignedFromInteger $ (n `B.xor` mask (sizeT s)) + 1
+
+unsignedFromInteger ::
+  forall nT
+  . PositiveT nT
+  => Integer
+  -> Unsigned nT
+unsignedFromInteger n
+  | n > 0
+  = Unsigned $ n B..&. mask (undefined :: nT)
+  | n < 0
+  = negateUnsigned $ unsignedFromInteger $ negate n
+  | otherwise
+  = Unsigned 0
+
+absUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+absUnsigned u = u
+
+signumUnsigned ::
+  PositiveT nT
+  => Unsigned nT
+  -> Unsigned nT
+signumUnsigned (Unsigned 0) = Unsigned 0
+signumUnsigned _            = Unsigned 1
 
 instance PositiveT nT => Real (Unsigned nT) where
     toRational n = toRational $ toInteger n

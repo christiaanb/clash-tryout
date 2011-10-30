@@ -18,17 +18,17 @@ import qualified HscTypes
 import qualified UniqSupply
 
 -- Internal Modules
+import CLaSH.CoreHW                   (coreToCoreHW)
 import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
-import CLaSH.Desugar (desugar)
-import CLaSH.Netlist (genNetlist)
-import CLaSH.Netlist.GenVHDL (genVHDL)
-import CLaSH.Normalize (normalize)
-import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm, runParseM)
-import CLaSH.Util.CoreHW.Tools (termType)
-import CLaSH.Util.Pretty (pprString)
-import CLaSH.Util.GHC (loadModules)
-import CLaSH.Util (curLoc)
+import CLaSH.Desugar                  (desugar)
+import CLaSH.Netlist                  (genNetlist)
+import CLaSH.Netlist.GenVHDL          (genVHDL)
+import CLaSH.Normalize                (normalize)
+import CLaSH.Util.CoreHW              (termType)
+import CLaSH.Util.Pretty              (pprString)
+import CLaSH.Util.GHC                 (loadModules)
+import CLaSH.Util                     (curLoc)
 
 generateVHDL ::
   String
@@ -42,22 +42,20 @@ generateVHDL modName = do
     case topEntities of
       [topEntity'] -> do
         let topEntity = fst topEntity'
-        us <- Label.gets drUniqSupply
-        let (us', vhdl) = runParseM us (coreExprToTerm (snd topEntity'))
-        Label.puts drUniqSupply us'
-        --let globalBindings = Map.fromList allBindings
-        --globalBindings'           <- desugar    globalBindings  topEntity
-        --(normalized,netlistState) <- normalize  globalBindings' topEntity
-        --netlist                   <- genNetlist netlistState normalized topEntity
-        --let vhdl                  = map ((flip genVHDL) ["work.all"]) netlist
+        let globalBindings = Map.fromList allBindings
+        globalBindings'           <- desugar      globalBindings  topEntity
+        coreHWBindings            <- coreToCoreHW globalBindings' topEntity
+        (normalized,netlistState) <- normalize    coreHWBindings  topEntity
+        netlist                   <- genNetlist   netlistState    normalized topEntity
+        let vhdl                  = map ((flip genVHDL) ["work.all"]) netlist
+        --let vhdl = normalized
         return (topEntity,vhdl)
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
-  putStrLn $ pprString vhdl ++ "\n::\n" ++ pprString (termType vhdl)
-  --let dir = "./vhdl/" ++ (show top) ++ "/"
-  --prepareDir dir
-  --mapM_ (writeVHDL dir) vhdl
+  let dir = "./vhdl/" ++ (show top) ++ "/"
+  prepareDir dir
+  mapM_ (writeVHDL dir) vhdl
   end <- Clock.getCurrentTime
   putStrLn $ "\nTotal compilation tooks: " ++ show (Clock.diffUTCTime end start)
   return ()
