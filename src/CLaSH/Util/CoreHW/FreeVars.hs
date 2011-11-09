@@ -33,16 +33,17 @@ mkFreeVars = (unitVarSet, term, alternatives)
   where
     term (Var x)          = unitVarSet x
     term (TyApp e ty)     = typ ty `unionVarSet` term e
-    term (App e x)        = term e `extendVarSet` x
-    term (Case e ty alts) = typ ty `unionVarSet` term e `unionVarSet` (alternatives alts)
+    term (App e1 e2)      = term e1 `unionVarSet` term e2
+    term (Case e ty alts) = typ ty `unionVarSet` term e `unionVarSet`  (alternatives alts)
     term (LetRec xes e)   = (unionVarSets (map term es) `unionVarSet` term e `unionVarSet` unionVarSets (map idFreeVars xs)) `delVarSetList` xs
       where
         (xs,es) = unzip xes
 
     term (TyLambda x e)  = term e `delVarSet` x
     term (Lambda x e)    = nonRecBinderFreeVars x (term e)
-    term (Data _ tys xs) = unionVarSets (map typ tys) `unionVarSet` mkVarSet xs
+    term (Data _)        = emptyVarSet
     term (Literal _)     = emptyVarSet
+    term (Prim _)        = emptyVarSet
 
     alternatives = unionVarSets . map alternative
     alternative (altcon, e) = altConFreeVars altcon $ term e
@@ -66,6 +67,6 @@ altConFreeVars ::
   AltCon
   -> FreeVars
   -> FreeVars
-altConFreeVars (DataAlt _ as xs) = (`delVarSetList` as) . nonRecBindersFreeVars xs
-altConFreeVars (LiteralAlt _)    = id
-altConFreeVars DefaultAlt        = id
+altConFreeVars (DataAlt _ xs) = nonRecBindersFreeVars xs
+altConFreeVars (LiteralAlt _) = id
+altConFreeVars DefaultAlt     = id

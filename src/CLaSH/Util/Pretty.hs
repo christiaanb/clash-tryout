@@ -12,4 +12,4 @@ import CLaSH.Util.Pretty.Core
 import CLaSH.Util.Pretty.CoreHW
 
 pprString :: (Outputable x) => x -> String
-pprString = showSDoc . ppr
+pprString = showSDocDump . ppr

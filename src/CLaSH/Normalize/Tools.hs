@@ -4,6 +4,7 @@ module CLaSH.Normalize.Tools
   ( isNormalizable
   , assertNormalizable
   , isRepr
+  , isBox
   , isLocalVar
   , isLambdaBodyCtx
   , mkSelCase
@@ -13,15 +14,16 @@ module CLaSH.Normalize.Tools
   , mkFunction
   , splitNormalizedNonRep
   , getGlobalExpr
-  , varInArgPosition
+  , localFreeVars
   )
 where
 
 -- External Modules
 import Control.Monad.Trans (lift)
 import qualified Control.Monad.Error as Error
-import qualified Data.Map as Map
 import qualified Data.Label.PureM as Label
+import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 
 -- GHC API
 import qualified CoreUtils
@@ -34,12 +36,13 @@ import qualified TcType
 import qualified TyCon
 import qualified Type
 import qualified Var
+import qualified VarSet
 
 -- Internal Modules
 import CLaSH.Netlist.Tools   (isReprType, assertReprType)
 import CLaSH.Normalize.Types
 import CLaSH.Util            (curLoc, liftErrorState)
-import CLaSH.Util.CoreHW     (Var, Term(..), AltCon(..),CoreBinding, CoreContext(..), TypedThing(..), Type, mkInternalVar, mkTypeVar, cloneVar, flattenLets, collectBndrs, collectArgs)
+import CLaSH.Util.CoreHW     (Var, Term(..), AltCon(..),CoreBinding, CoreContext(..), TypedThing(..), Type, mkInternalVar, mkTypeVar, cloneVar, flattenLets, collectBndrs, collectArgs, tyHasFreeTyVars, termSomeFreeVars)
 import CLaSH.Util.Pretty     (pprString)
 
 isNormalizable ::
@@ -80,6 +83,30 @@ assertRepr ::
 assertRepr tyThing = case getType tyThing of
   Nothing -> return False
   Just ty -> (liftErrorState nsNetlistState $ assertReprType ty)
+
+isBox ::
+  (TypedThing t)
+  => t
+  -> Bool
+isBox tyThing = case getType tyThing of
+  Nothing -> False
+  Just ty -> isBox' ty
+
+isBox' ty | tyHasFreeTyVars ty                      = False
+          | Maybe.isJust (Type.splitFunTy_maybe ty) = False
+          | Maybe.isJust (Type.splitForAllTy_maybe ty) = False
+          | otherwise = case Type.splitTyConApp_maybe ty of
+  Just (tyCon, args) -> case Maybe.catMaybes (map Type.splitFunTy_maybe args) of
+    [] -> any isBox' args || boxTyCon tyCon
+    _  -> True
+  Nothing -> error $ "isBox': " ++ pprString ty
+
+boxTyCon tyCon = case TyCon.tyConDataCons tyCon of
+  []  -> False
+  dcs -> let
+      argTyss = concatMap DataCon.dataConRepArgTys dcs
+    in
+      any (\t -> isBox' t || Maybe.isJust (Type.splitFunTy_maybe t)) argTyss
 
 isLambdaBodyCtx ::
   CoreContext
@@ -125,7 +152,7 @@ mkSelCase caller scrut dcI i = do
             let selBndrTy = getTypeFail selBndr
             -- Create the case expression
             let binders = take i wildbndrs ++ [selBndr] ++ drop (i+1) wildbndrs
-            return $ Case scrut selBndrTy [(DataAlt datacon [] binders, Var selBndr)]
+            return $ Case scrut selBndrTy [(DataAlt datacon binders, Var selBndr)]
       Nothing -> Error.throwError $ $(curLoc) ++ caller ++ ": Creating extractor case, but scrutinee has no datacons?" ++ errorMsg
     Nothing -> Error.throwError $ $(curLoc) ++ caller ++ ": Creating extractor case, but scrutinee has no tycon?" ++ errorMsg
   where
@@ -158,16 +185,16 @@ mkReferenceTo var = (Var var)
 
 mkBinderFor ::
   TypedThing t
-  => t
-  -> String
+  => String
+  -> t
   -> NormalizeSession Var
-mkBinderFor tt name = mkInternalVar name (getTypeFail tt)
+mkBinderFor name tt = mkInternalVar name (getTypeFail tt)
 
 mkTyBinderFor ::
-  Type
-  -> String
+  String
+  -> Type
   -> NormalizeSession Var
-mkTyBinderFor t name = mkTypeVar name (Kind.typeKind t)
+mkTyBinderFor name t = mkTypeVar name (Kind.typeKind t)
 
 addGlobalBind ::
   Var
@@ -182,19 +209,11 @@ getGlobalExpr ::
 getGlobalExpr vId = do
   fmap (Map.lookup vId) $ (lift . lift) $ Label.gets nsBindings
 
-varInArgPosition ::
-  Var
-  -> Term
-  -> Bool
-varInArgPosition v (App e v')      | v == v'
-                                   , (Var f, _) <- collectArgs e
-                                   = False
-                                   | v == v'
-                                   = True
-varInArgPosition v (App e _)       | otherwise = varInArgPosition v e
-varInArgPosition v (LetRec b e)    = or $ (map (varInArgPosition v . snd) b) ++ [varInArgPosition v e]
-varInArgPosition v (Case s _ a)    = or $ (map (varInArgPosition v . snd) a) ++ [varInArgPosition v s]
-varInArgPosition v (Lambda _ e)    = varInArgPosition v e
-varInArgPosition v (TyLambda _ e)  = varInArgPosition v e
-varInArgPosition v (Data dc as xs) = v `elem` xs
-varInArgPosition _ _               = False
+localFreeVars ::
+  Term
+  -> NormalizeSession [Var]
+localFreeVars expr = do
+    bndrs               <- fmap (Map.keys) $ (lift . lift) $ Label.gets nsBindings
+    let interesting var = Var.isLocalVar var && (var `notElem` bndrs)
+    let freeVars        = VarSet.varSetElems $ termSomeFreeVars interesting expr
+    return freeVars

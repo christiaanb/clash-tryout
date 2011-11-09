@@ -22,9 +22,9 @@ import qualified VarSet
 -- Internal Modules
 import CLaSH.Driver.Tools             (getGlobalExpr)
 import CLaSH.Driver.Types             (DriverSession, drUniqSupply)
-import CLaSH.Netlist.Constants        (builtinIds)
 import CLaSH.Util                     (UniqSupply, curLoc, makeCached)
-import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm, runParseM)
+import CLaSH.Util.CoreHW.Constants    (builtinIds)
+import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm)
 import CLaSH.Util.CoreHW.FreeVars     (termFreeVars)
 import CLaSH.Util.CoreHW.Syntax       (Var, Term)
 import CLaSH.Util.CoreHW.Tools        (termType,varString,varStringUniq)
@@ -64,11 +64,8 @@ coreToCoreHW' (bndr:bndrs) = do
       term <- makeCached bndr chwTranslated $ coreToCoreHW'' expr
       let usedFreeBndrs = VarSet.varSetElems $ VarSet.filterVarSet
                             (\v -> (Var.isId v) &&
-                                   (not $ Id.isDataConWorkId v) &&
-                                   (Id.isDataConId_maybe v == Nothing) &&
                                    (Id.isClassOpId_maybe v == Nothing) &&
-                                   (varString v) `notElem` builtinIds  &&
-                                   (varString v) `notElem` builtinDicts)
+                                   (varString v) `notElem` builtinIds)
                             (termFreeVars term)
       translatedUsed <- coreToCoreHW' usedFreeBndrs
       translatedOthers <- coreToCoreHW' bndrs
@@ -80,15 +77,12 @@ coreToCoreHW'' ::
   -> CoreHWSession Term
 coreToCoreHW'' expr = do
   us <- LabelM.gets chwUniqSupply
-  let (us',term) = runParseM us (coreExprToTerm expr)
+  let term = coreExprToTerm expr
   let (retVal,tState) = Identity.runIdentity $
         State.runStateT
           (Error.runErrorT (regenUniques term))
-          (emptyTransformState us')
+          (emptyTransformState us)
   LabelM.puts chwUniqSupply (Label.get tsUniqSupply tState)
   case retVal of
     Left errMsg -> fail errMsg
     Right term' -> return term'
-
-builtinDicts :: [String]
-builtinDicts = ["$dPositiveT","$fShowUnsigned","$fEqInteger"]

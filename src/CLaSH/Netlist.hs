@@ -16,6 +16,8 @@ import qualified Data.Map as Map
 import Debug.Trace
 
 -- GHC API
+import qualified CoreSyn
+import qualified CoreUnfold
 import qualified DataCon
 import qualified FastString
 import qualified Id
@@ -30,7 +32,7 @@ import CLaSH.Netlist.Constants
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.CoreHW (Var, Term(..), AltCon(..), CoreBinding, varString, varStringUniq, collectVarArgs, dataConIndex, dataConsFor)
+import CLaSH.Util.CoreHW (Var, Term(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -85,12 +87,22 @@ mkConcSm ::
 
 mkConcSm (bndr, Var v) = genApplication bndr v []
 
-mkConcSm (bndr, app@(App _ _)) | (Var _) <- varf = do
-  genApplication bndr f args'
+mkConcSm (bndr, app@(App _ _))
+  | (Var f, args) <- collectExprArgs app
+  , all isVar args
+  = genApplication bndr f $ map (\e -> case e of Var x -> x) args
+
+mkConcSm (bndr, app@(App _ _))
+  | (Prim f, args) <- collectExprArgs app
+  = genApplication bndr f $ map (\e -> case e of Var x -> x) $ filter varArg args
   where
-    (varf,args) = collectVarArgs app
-    args'       = filter (not . Id.isDictId) args
-    (Var f)     = varf
+    varArg (Var _) = True
+    varArg _       = False
+
+mkConcSm (bndr, app@(App _ _))
+  | (Data dc, args) <- collectExprArgs app
+  , all isVar args
+  = genApplication bndr (DataCon.dataConWorkId dc) $ map (\e -> case e of Var x -> x) args
 
 mkConcSm (bndr, app@(App _ _)) = do
   Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
@@ -98,7 +110,7 @@ mkConcSm (bndr, app@(App _ _)) = do
 mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
   let comment = genComment bndr (pprString expr) []
   case alt of
-    (DataAlt dc tybndrs varbndrs, (Var selBndr)) -> do
+    (DataAlt dc varbndrs, (Var selBndr)) -> do
       nonEmptySel <- hasNonEmptyType selBndr
       if nonEmptySel
         then do
@@ -115,11 +127,16 @@ mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
                 else do
                   case hwTypeScrut of
                     ProductType _ _ -> do
-                      let fieldSlice = typeFieldRange hwTypeScrut selI
+                      let fieldSlice = typeFieldRange hwTypeScrut 0 selI
+                      let sliceExpr = mkSliceExpr (varStringUniq scrut) fieldSlice
+                      return (comment:(mkUncondAssign (bndr,hwTypeBndr) sliceExpr),[])
+                    SPType _ _ -> do
+                      dcI <- dataConIndex scrut dc
+                      let fieldSlice = typeFieldRange hwTypeScrut dcI selI
                       let sliceExpr = mkSliceExpr (varStringUniq scrut) fieldSlice
                       return (comment:(mkUncondAssign (bndr,hwTypeBndr) sliceExpr),[])
                     other -> do
-                      error $ show hwTypeScrut
+                      error $ "mkConcSm: extractor case" ++ show (hwTypeScrut,selI)
             Nothing -> Error.throwError $ $(curLoc) ++ "Not in normal form: not a selector case: result is not one of the bndrs:\n" ++ pprString expr
         else
           return ([],[])
@@ -138,19 +155,32 @@ mkConcSm (bndr, expr@(Case (Var scrut) _ alts)) = do
       return (map (ExprLit Nothing . ExprBit) [H,L], scrutExpr)
     BoolType -> do
       return (map (ExprLit Nothing . ExprBit) [L,H], scrutExpr)
-    other -> error $ "mkConcSm (bndr, expr@(Case (Var scrut) _ _ alts)) " ++ show scrutHWType
-  altcons <- mapM (\(DataAlt dc _ _, _) -> fmap (enums!!) $ dataConIndex scrut dc) $ tail alts
+    SPType _ conArgsPairs -> do
+      let conSize = ceiling $ logBase 2 $ fromIntegral $ length conArgsPairs
+      let hSize   = htypeSize scrutHWType
+      let es      = map (ExprLit (Just conSize) . ExprNum . toInteger) [0..(length conArgsPairs)-1]
+      let cmpE    = mkSliceExpr (varStringUniq scrut) (hSize-1,hSize-conSize)
+      return (es,cmpE)
+    other -> error $ "mkConcSm (bndr, expr@(Case (Var scrut) _ _ alts)) " ++ show scrutHWType ++ show scrutExpr
+  altcons <- mapM (\(DataAlt dc _, _) -> fmap (enums!!) $ dataConIndex scrut dc) $ tail alts
   (defaultExpr:otherExprs) <- mapM (varToExpr . (\(_,Var v) -> v)) alts
   let caseExpr = ExprCase cmp (zip (map (:[]) altcons) otherExprs) (Just defaultExpr)
   return (comment:(mkUncondAssign (bndr,bndrType) caseExpr),[])
 
 mkConcSm (bndr, expr@(Case _ _ _)) = Error.throwError $ $(curLoc) ++ "Not in normal form: Case statement does not have a simple variable as scrutinee:\n" ++ pprString expr
 
-mkConcSm (bndr, Data dc as xs) = do
-  let dataConId = DataCon.dataConWorkId dc
-  genApplication bndr dataConId xs
+mkConcSm (bndr, Literal lit) = do
+  bndrType <- mkHType bndr
+  i <- case lit of
+        Literal.MachInt    integer -> return integer
+        Literal.MachInt64  integer -> return integer
+        Literal.MachWord   integer -> return integer
+        Literal.MachWord64 integer -> return integer
+        _                          -> Error.throwError $ $(curLoc) ++ "Not an integer literal:\n" ++ pprString lit
+  let comment = genComment bndr (pprString lit) []
+  return  (comment:mkUncondAssign (bndr,bndrType) (ExprLit Nothing $ ExprNum i), [])
 
-mkConcSm (bndr, expr) = Error.throwError $ $(curLoc) ++ "Not in normal form: let-bound expr is not a Var, Case or App:\n" ++ pprString expr
+mkConcSm (bndr, expr) = Error.throwError $ $(curLoc) ++ "Not in normal form: let-bound expr is not a Lit, Var, Case or App:\n" ++ pprString expr
 
 genApplication ::
   Var
@@ -272,7 +302,9 @@ genApplication dst f args =  do
                     then builder dst args
                     else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (dst,f,args)
                 Nothing -> do
-                  Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
+                  case args of
+                    [] -> (varToExpr f) >>= \v -> return (mkUncondAssign (dst, dstType) v,[])
+                    _ -> Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
     else
       return ([],[])
 
@@ -292,7 +324,8 @@ builtinBuilders =
   --, ("delay", (3, genDelay))
   , ("plusUnsigned"    , (2, genBinaryOperatorSLV "(+)" Plus))
   , ("minUnsigned"    , (2, genBinaryOperatorSLV "(-)" Minus))
-  --, ("fromInteger", (1, genFromInteger))
+  , ("unsignedFromInteger", (1, genFromInteger))
+  , ("smallInteger", (1, genSmallInteger))
   --, ("+>>"  , (2, genShiftIntoL))
   --, ("vlast", (1, genVLast))
   --, ("singleton", (1, genSingleton))
@@ -327,13 +360,24 @@ builtinBuilders =
 --        "ClockDown" -> return (clockName,NegEdge)
 --    _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
 
---genFromInteger :: BuiltinBuilder
---genFromInteger dst [arg] = do
---  lit <- getIntegerLiteral nlTfpSyn arg
---  dstType <- mkHType dst
---  let litExpr = mkUncondAssign (dst,dstType) (ExprLit (Just $ htypeSize dstType) $ ExprNum lit)
---  let comment = genComment dst "fromInteger" [arg]
---  return (comment:litExpr,[])
+genFromInteger :: BuiltinBuilder
+genFromInteger dst [arg] = do
+  arg' <- varToExpr arg
+  dstType <- mkHType dst
+  let litExpr = case dstType of
+        UnsignedType len -> mkUncondAssign (dst,dstType) (toSLV dstType $ ExprFunCall "to_unsigned" [arg',ExprLit Nothing $ ExprNum $ toInteger len])
+  let comment = genComment dst "fromInteger" [arg]
+  return (comment:litExpr,[])
+
+genSmallInteger :: BuiltinBuilder
+genSmallInteger dst [arg] = do
+  argType <- mkHType arg
+  case argType of
+    IntegerType -> do
+      arg' <- varToExpr arg
+      let comment = genComment dst "smallInteger" [arg]
+      return (comment:mkUncondAssign (dst,argType) arg',[])
+    _ -> Error.throwError $ $(curLoc) ++ "I don't actually know how to non-Integer type: " ++ pprString arg ++ " :: " ++ pprString (getTypeFail arg)
 
 --genShiftIntoL :: BuiltinBuilder
 --genShiftIntoL dst [Var elArg,Var vecArg] = do

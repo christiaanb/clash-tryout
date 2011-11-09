@@ -98,7 +98,7 @@ normalizeExpr ::
   String
   -> Term
   -> NormalizeSession Term
-normalizeExpr bndrName expr = trace ("\nnormalizing: " ++ bndrName) $ do
+normalizeExpr bndrName expr = trace ("\nnormalizing: " ++ bndrName ++ "\n" ++ pprString expr) $ do
   rewritten <- runRewrite normalizeStrategy startContext expr
   expr' <- case rewritten of
     Right (expr',_,_) -> return expr'

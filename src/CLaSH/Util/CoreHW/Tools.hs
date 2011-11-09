@@ -20,7 +20,7 @@ module CLaSH.Util.CoreHW.Tools
   , isLet
   , tyHasFreeTyVars
   , hasFreeTyVars
-  , collectVarArgs
+  , collectExprArgs
   , collectTypeArgs
   , collectArgs
   , fromTfpInt
@@ -94,14 +94,23 @@ termType ::
   -> Type
 termType e = case e of
   Var x         -> idType x
+  Prim x        -> idType x
   Literal l     -> literalType l
   TyLambda tv e -> tv `mkForAllTy` termType e
   Lambda v e    -> idType v `mkFunTy` termType e
-  Data dc as xs -> (idType (dataConWorkId dc) `applyTys` as) `applyFunTys` map idType xs
+  Data dc       -> idType (dataConWorkId dc)
   TyApp e a     -> termType e `applyTy` a
-  App e x       -> termType e `applyFunTy` idType x
-  Case _ ty _ -> ty
+  Case _ ty _   -> ty
   LetRec _ e    -> termType e
+  App _ _       -> case collectArgs e of
+                    (fun, args) -> applyTypeToArgs (termType fun) args
+
+applyTypeToArgs :: Type -> [Either Term Type] -> Type
+applyTypeToArgs opTy []              = opTy
+applyTypeToArgs opTy (Right ty:args) = applyTypeToArgs (opTy `applyTy` ty) args
+applyTypeToArgs opTy (Left e:args)   = case splitFunTy_maybe opTy of
+    Just (_, resTy) -> applyTypeToArgs resTy args
+    Nothing         -> error $ "applyTypeToArgs splitFunTy" ++ pprString opTy
 
 applyFunTy ::
   Type
@@ -146,11 +155,11 @@ collectBndrs expr = go [] expr
 
 mkApps ::
   Term
-  -> [Either Var Type]
+  -> [Either Term Type]
   -> Term
-mkApps e []             = e
-mkApps e (Left v:args)  = mkApps (App e v) args
-mkApps e (Right t:args) = mkApps (TyApp e t) args
+mkApps e []              = e
+mkApps e1 (Left e2:args) = mkApps (App e1 e2) args
+mkApps e (Right t:args)  = mkApps (TyApp e t) args
 
 mkLams ::
   [Var]
@@ -197,15 +206,15 @@ isVar _       = False
 termString ::
   Term
   -> String
-termString (Var      _)       = "Var"
-termString (Literal  _)       = "Literal"
-termString (TyLambda _ _)     = "TyLambda"
-termString (Lambda   _ _)     = "Lambda"
-termString (Data     _ _ _)   = "Data"
-termString (TyApp    _ _)     = "TyApp"
-termString (App      _ _)     = "App"
+termString (Var      _)     = "Var"
+termString (Literal  _)     = "Literal"
+termString (TyLambda _ _)   = "TyLambda"
+termString (Lambda   _ _)   = "Lambda"
+termString (Data     _)     = "Data"
+termString (TyApp    _ _)   = "TyApp"
+termString (App      _ _)   = "App"
 termString (Case     _ _ _) = "Case"
-termString (LetRec   _ _)     = "LetRec"
+termString (LetRec   _ _)   = "LetRec"
 
 exprUsesBinders ::
   [Var]
@@ -247,12 +256,12 @@ hasFreeTyVars ::
   -> Bool
 hasFreeTyVars = not . isEmptyVarSet . termSomeFreeVars isTyVar
 
-collectVarArgs ::
+collectExprArgs ::
   Term
-  -> (Term, [Var])
-collectVarArgs = go []
+  -> (Term, [Term])
+collectExprArgs = go []
   where
-    go args (App e v)   = go (v:args) e
+    go args (App e1 e2) = go (e2:args) e1
     go args (TyApp e t) = go args e
     go args e           = (e, args)
 
@@ -267,10 +276,10 @@ collectTypeArgs = go []
 
 collectArgs ::
   Term
-  -> (Term, [Either Var Type])
+  -> (Term, [Either Term Type])
 collectArgs = go []
   where
-    go args (App e v)   = go (Left v:args) e
+    go args (App e1 e2) = go (Left e2:args) e1
     go args (TyApp e t) = go (Right t:args) e
     go args e           = (e, args)
 

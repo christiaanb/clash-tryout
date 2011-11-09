@@ -55,6 +55,17 @@ varU = translate $ \e -> case e of
   (C.Var x) -> return $ mempty (C.Var x)
   _         -> fail "varU"
 
+primR :: (Monoid dec, Monad m)
+  => Rewrite m dec C.Term
+primR = transparently $ rewrite $ \e -> case e of
+  (C.Prim x) -> return (C.Prim x)
+  _         -> fail "varR"
+
+primU :: (Monad m, Monoid dec, Monoid r)
+  => Translate m dec C.Term r
+primU = translate $ \e -> case e of
+  (C.Prim x) -> return $ mempty (C.Prim x)
+  _         -> fail "varU"
 
 litR :: (Monoid dec, Monad m)
   => Rewrite m dec C.Term
@@ -99,28 +110,30 @@ lamU rr = translate $ \e -> case e of
 dataR :: (Monoid dec, Monad m)
   => Rewrite m dec C.Term
 dataR = transparently $ rewrite $ \e -> case e of
-  (C.Data d as xs) -> return (C.Data d as xs)
-  _                -> fail "dataR"
+  (C.Data d) -> return (C.Data d)
+  _          -> fail "dataR"
 
 dataU :: (Monoid dec, Monad m, Monoid r)
   => Translate m dec C.Term r
 dataU = translate $ \e -> case e of
-  (C.Data d as xs) -> return $ mempty
-  _                -> fail "dataU"
+  (C.Data d) -> return $ mempty
+  _          -> fail "dataU"
 
 appR :: (Monad m)
   => Rewrite m [C.CoreContext] C.Term
   -> Rewrite m [C.CoreContext] C.Term
-appR rr = transparently $ rewrite $ \e -> case e of
-  (C.App e v) -> liftM (`C.App` v) (apply C.AppFirst rr e)
-  _           -> fail "appR"
+  -> Rewrite m [C.CoreContext] C.Term
+appR rr1 rr2 = transparently $ rewrite $ \e -> case e of
+  (C.App e1 e2) -> liftM2 C.App (apply C.AppFirst rr1 e1) (apply C.AppSecond rr2 e2)
+  _             -> fail "appR"
 
 appU :: (Monad m, Monoid r)
   => Translate m [C.CoreContext] C.Term r
   -> Translate m [C.CoreContext] C.Term r
-appU rr = translate $ \e -> case e of
-  (C.App e v) -> (apply C.AppFirst rr e)
-  _           -> fail "appU"
+  -> Translate m [C.CoreContext] C.Term r
+appU rr1 rr2 = translate $ \e -> case e of
+  (C.App e1 e2) -> liftM2 mappend (apply C.AppFirst rr1 e1) (apply C.AppSecond rr2 e2)
+  _             -> fail "appU"
 
 tyAppR :: (Monad m)
   => Rewrite m [C.CoreContext] C.Term
@@ -164,7 +177,7 @@ caseR rr1 rr2 = transparently $ rewrite $ \e -> case e of
   (C.Case scrut t alts) -> liftM2 (\scrut' alts' -> C.Case scrut' t alts')
                                     (apply C.Other rr1 scrut)
                                     (mapM (secondM (apply C.CaseAlt rr2)) alts)
-  _                       -> fail "caseR"
+  _                     -> fail "caseR"
 
 caseU :: (Monad m, Monoid r)
   => Translate m [C.CoreContext] C.Term r
@@ -172,24 +185,26 @@ caseU :: (Monad m, Monoid r)
   -> Translate m [C.CoreContext] C.Term r
 caseU rr1 rr2 = translate $ \e -> case e of
   (C.Case scrut t alts) -> liftM2 mappend (apply C.Other rr1 scrut) (liftM mconcat (mapM (apply C.CaseAlt rr2 . snd) alts))
-  _                       -> fail "caseU"
+  _                     -> fail "caseU"
 
 instance (Monad m) => Walker m [C.CoreContext] C.Term where
   allR rr   =  varR
             <+ litR
+            <+ primR
             <+ tyLamR (extractR rr)
             <+ lamR   (extractR rr)
             <+ dataR
-            <+ appR   (extractR rr)
+            <+ appR   (extractR rr) (extractR rr)
             <+ tyAppR (extractR rr)
             <+ letR   (extractR rr) (extractR rr)
             <+ caseR  (extractR rr) (extractR rr)
   crushU rr =  varU
             <+ litU
+            <+ primU
             <+ tyLamU (extractU rr)
             <+ lamU   (extractU rr)
             <+ dataU
-            <+ appU   (extractU rr)
+            <+ appU   (extractU rr) (extractU rr)
             <+ tyAppU (extractU rr)
             <+ letU   (extractU rr) (extractU rr)
             <+ caseU  (extractU rr) (extractU rr)
@@ -214,4 +229,4 @@ changed tId prevTerm expr = do
   liftQ $ Label.modify C.tsTransformCounter (+1)
   --trace ("\n" ++ tId ++ "(before):\n" ++ pprString prevTerm ++ "\n\n" ++ tId ++ "(after):\n" ++ pprString expr) $ markM $ return expr
   trace tId $ markM $ return expr
-  --return expr
+  --markM $ return expr

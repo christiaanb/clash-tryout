@@ -13,15 +13,16 @@ import Var     (Var, TyVar)
 data Term
   = Var      Var
   | Literal  Literal
+  | Data     DataCon
+  | Prim     Var
   | TyLambda TyVar        Term
   | Lambda   Var          Term
-  | Data     DataCon      [Type] [Var]
   | TyApp    Term         Type
-  | App      Term         Var
+  | App      Term         Term
   | Case     Term         Type   [(AltCon,Term)]
   | LetRec   [(Var,Term)] Term
 
 data AltCon
-  = DataAlt    DataCon [TyVar] [Var]
+  = DataAlt    DataCon [Var]
   | LiteralAlt Literal
   | DefaultAlt

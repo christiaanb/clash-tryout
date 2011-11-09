@@ -38,26 +38,25 @@ substTerm :: TermSubst -> Term -> Term
 substTerm subst expr
   = go expr
   where
-    go (Var v)                   = Var (lookupIdSubst subst v)
-    go (Literal lit)             = Literal lit
-    go d@(Data dc as xs)         = Data dc (map (substTy subst) as)  (map (lookupIdSubst subst) xs)
-    go (App fun var)             = App (go fun) (lookupIdSubst subst var)
-    go (TyApp fun ty)            = TyApp (go fun) (substTy subst ty)
-    go (Lambda bndr body)        = Lambda bndr' (substTerm subst' body)
+    go (Var v)              = Var (lookupIdSubst subst v)
+    go (Literal lit)        = Literal lit
+    go (Prim x)             = Prim x
+    go (Data dc)            = Data dc
+    go (App fun arg)        = App (go fun) (go arg)
+    go (TyApp fun ty)       = TyApp (go fun) (substTy subst ty)
+    go (Lambda bndr body)   = Lambda bndr' (substTerm subst' body)
+                            where
+                              (subst', bndr') = substBndr subst bndr
+    go (TyLambda bndr body) = TyLambda bndr' (substTerm subst' body)
                                  where
                                    (subst', bndr') = substBndr subst bndr
-    go (TyLambda bndr body)      = TyLambda bndr' (substTerm subst' body)
-                                 where
-                                   (subst', bndr') = substBndr subst bndr
-    go (LetRec binds body)       = LetRec binds' (substTerm subst' body)
-                                 where
-                                   (subst', binds') = substBinds subst binds
+    go (LetRec binds body)  = LetRec binds' (substTerm subst' body)
+                            where
+                              (subst', binds') = substBinds subst binds
     go (Case scrut ty alts) = Case (go scrut) (substTy subst ty) (map (goAlt subst) alts)
-
-    goAlt subst (DataAlt dc as xs, rhs) = (DataAlt dc as' xs', substTerm subst'' rhs)
+    goAlt subst (DataAlt dc xs, rhs) = (DataAlt dc xs', substTerm subst' rhs)
                                      where
-                                       (subst',as')  = substBndrs subst as
-                                       (subst'',xs') = substBndrs subst' xs
+                                       (subst',xs') = substBndrs subst xs
     goAlt subst (con, rhs)           = (con, substTerm subst rhs)
 
 substBinds :: TermSubst -> [CoreBinding] -> (TermSubst, [CoreBinding])

@@ -201,24 +201,38 @@ htypeSize UnitType                = 0
 htypeSize BitType                 = 1
 htypeSize BoolType                = 1
 htypeSize ClockType               = 1
+htypeSize IntegerType             = 32
 htypeSize (UnsignedType len)      = len
 htypeSize (VecType s eType)       = s * htypeSize eType
 htypeSize (SumType _ fields)      = ceiling $ logBase 2 $ fromIntegral $ length fields
 htypeSize (ProductType _ fields)  = sum $ map htypeSize fields
+htypeSize (SPType "Integer" _)    = 32
 htypeSize (SPType _ fields)       = conSize + (maximum $ map (sum . map (htypeSize) . snd) fields)
   where
     conSize = ceiling $ logBase 2 $ fromIntegral $ length fields
+htypeSize hwtype                  = error $ "htypeSize: " ++ show hwtype
 
 typeFieldRange ::
   HWType
   -> Int
+  -> Int
   -> (Int,Int)
-typeFieldRange hwType dcI = (typeFieldRanges hwType)!!dcI
+typeFieldRange hwType dcI selI = ((!! selI) . (!! dcI)) $ typeFieldRanges hwType
 
-typeFieldRanges (ProductType _ fields) = ranges
+typeFieldRanges ::
+  HWType
+  -> [[(Int,Int)]]
+typeFieldRanges (ProductType _ fields) = [ranges]
   where
     fieldLengths = map (htypeSize) fields
     (_,ranges)   = List.mapAccumL (\acc l -> let next = acc-l in (next,(acc,next + 1))) ((sum fieldLengths)-1) fieldLengths
+typeFieldRanges htype@(SPType _ fields) = ranges
+  where
+    hSize        = htypeSize htype
+    conSize      = ceiling $ logBase 2 $ fromIntegral $ length fields
+    fieldLengths = map (map htypeSize . snd) fields
+    calcRanges   = snd . List.mapAccumL (\acc l -> let next = acc-l in (next,(acc,next + 1))) (hSize-conSize-1)
+    ranges       = map calcRanges fieldLengths
 
 mkSliceExpr ::
   Ident

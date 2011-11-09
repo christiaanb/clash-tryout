@@ -1,6 +1,7 @@
 module CLaSH.Util.CoreHW.Transform
   ( substituteType
-  , substituteVar
+  , inlineBind
+  , substituteExpr
   , regenUniques
   , cloneVar
   , flattenLets
@@ -20,12 +21,12 @@ import qualified Var
 import qualified VarEnv
 
 -- Internal Modules
-import CLaSH.Util               (MonadUnique(..), firstM, curLoc, mapAccumLM)
-import CLaSH.Util.CoreHW.Syntax (Var, TyVar, Term(..), Type, AltCon(..))
+import CLaSH.Util                  (MonadUnique(..), firstM, curLoc, mapAccumLM, partitionM, secondM)
+import CLaSH.Util.CoreHW.Syntax    (Var, TyVar, Term(..), Type, AltCon(..))
 import CLaSH.Util.CoreHW.TermSubst (emptySubst,extendTvSubst,substTerm)
-import CLaSH.Util.CoreHW.Tools (tyHasFreeTyVars)
-import CLaSH.Util.CoreHW.Traverse (transformationStep)
-import CLaSH.Util.CoreHW.Types  (TransformSession, TransformStep, CoreContext, CoreBinding)
+import CLaSH.Util.CoreHW.Tools     (tyHasFreeTyVars, varStringUniq)
+import CLaSH.Util.CoreHW.Traverse  (transformationStep, changed, startContext)
+import CLaSH.Util.CoreHW.Types     (TransformSession, TransformStep, CoreContext, CoreBinding)
 import CLaSH.Util.Pretty
 
 substituteType ::
@@ -37,21 +38,50 @@ substituteType find repl context expr = do
     let subst = extendTvSubst emptySubst find repl
     return $ substTerm subst expr
 
-substituteVar ::
-  (Monad m)
-  => Var
-  -> Var
+inlineBind ::
+  (Functor m, Monad m)
+  => String
+  -> (CoreBinding -> TransformSession m Bool)
   -> TransformStep m
-substituteVar find repl context expr = do
-    rwRes <- liftQ $ runRewrite ((extractR . bottomupR . tryR . promoteR . transformationStep) substituteVar') context expr
+inlineBind caller condition context expr@(LetRec binds res) = do
+  (replace,others) <- liftQ $ partitionM condition binds
+  case replace of
+    [] -> fail "inlineBind"
+    _  -> do
+      let newExpr = case others of [] -> res ; _ -> LetRec others res
+      newExpr' <- liftQ $ substitute replace newExpr
+      changed caller expr newExpr'
+  where
+    substitute ::
+      (Functor m, Monad m)
+      => [CoreBinding]
+      -> Term
+      -> TransformSession m Term
+    substitute [] e = return e
+    substitute ((bndr,val):rest) e = do
+      e'    <- substituteExpr bndr val e
+      rest' <- mapM (secondM (substituteExpr bndr val)) rest
+      substitute rest' e'
+
+inlineBind _ _ _ _ = fail "inlineBind"
+
+substituteExpr ::
+  (Functor m, Monad m)
+  => Var
+  -> Term
+  -> Term
+  -> TransformSession m Term
+substituteExpr find repl expr = do
+    rwRes <- runRewrite ((extractR . bottomupR . tryR . promoteR . transformationStep) substituteExpr') startContext expr
     expr' <- case rwRes of
       (Right (rwExpr,_,_)) -> return rwExpr
-      Left errMsg          -> liftQ $ Error.throwError $ $(curLoc) ++ "substituteVar failed: " ++ errMsg
+      Left errMsg          -> Error.throwError $ $(curLoc) ++ "substituteExpr failed: " ++ errMsg
     return expr'
   where
-    substituteVar' context expr@(Var var)   | find == var = return (Var repl)
-    substituteVar' context expr@(App e var) | find == var = return (App e repl)
-    substituteVar' context expr = fail "substituteVar'"
+    substituteExpr' context expr@(Var var) | find == var = do
+      repl' <- liftQ $ regenUniques repl
+      return repl'
+    substituteExpr' context expr = fail "substituteVar'"
 
 regenUniques ::
   (Functor m, Monad m)
@@ -70,6 +100,8 @@ regenUniques' subst (Var bndr) = do
 
 regenUniques' _ l@(Literal _) = return l
 
+regenUniques' _ p@(Prim _) = return p
+
 regenUniques' subst (TyLambda tyBndr res) = do
   res' <- regenUniques' subst res
   return (TyLambda tyBndr res')
@@ -79,28 +111,26 @@ regenUniques' subst (Lambda bndr res) = do
   res'  <- regenUniques' subst' res
   return (Lambda bndr' res')
 
-regenUniques' subst (Data dc as xs) = do
-  let xs' = map (\x -> VarEnv.lookupWithDefaultVarEnv subst x x) xs
-  return (Data dc as xs')
+regenUniques' subst d@(Data _) = return d
 
 regenUniques' subst (TyApp e t) = do
   e' <- regenUniques' subst e
   return (TyApp e' t)
 
-regenUniques' subst (App e var) = do
-  let var' = VarEnv.lookupWithDefaultVarEnv subst var var
-  e' <- regenUniques' subst e
-  return (App e' var')
+regenUniques' subst (App e1 e2) = do
+  e1' <- regenUniques' subst e1
+  e2' <- regenUniques' subst e2
+  return (App e1' e2')
 
 regenUniques' subst (Case scrut ty alts) = do
   scrut' <- regenUniques' subst scrut
   alts'  <- mapM (doAlt subst) alts
   return (Case scrut' ty alts')
   where
-    doAlt s (DataAlt dc as xs, e) = do
+    doAlt s (DataAlt dc xs, e) = do
       (s',xs') <- mapAccumLM regenUnique s xs
       e'       <- regenUniques' s' e
-      return (DataAlt dc as xs', e')
+      return (DataAlt dc xs', e')
     doAlt s (alt, e) = fmap ((,) alt) $ regenUniques' s e
 
 regenUniques' subst (LetRec binds res) = do

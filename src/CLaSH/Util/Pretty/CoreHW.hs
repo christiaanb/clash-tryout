@@ -20,21 +20,22 @@ asPrettyFunction x = PrettyFunction (\prec -> pprPrec prec x)
 
 instance Outputable Term where
   pprPrec prec e = case e of
-    Var x           -> pprPrec prec x
-    TyLambda x e    -> pprPrecLam prec [x] e
-    Lambda x e      -> pprPrecLam prec [x] e
-    Data dc tys xs  -> pprPrecApps prec dc (map asPrettyFunction tys ++ map asPrettyFunction xs)
-    Literal l       -> pprPrec prec l
-    TyApp e ty      -> pprPrecApp prec e ty
-    App e x         -> pprPrecApp prec e x
-    Case e  _ alts -> pprPrecCase prec e (map (second id) alts)
-    LetRec xes e    -> pprPrecLetRec prec (map (second id) xes) e
+    Var x         -> pprPrec prec x
+    Prim x        -> pprPrec prec x
+    TyLambda x e  -> pprPrecLam prec [x] e
+    Lambda x e    -> pprPrecLam prec [x] e
+    Data dc       -> pprPrec prec dc
+    Literal l     -> pprPrec prec l
+    TyApp e ty    -> pprPrecApp prec e ty
+    App e x       -> pprPrecApp prec e x
+    Case e _ alts -> pprPrecCase prec e (map (second id) alts)
+    LetRec xes e  -> pprPrecLetRec prec (map (second id) xes) e
 
 instance Outputable AltCon where
     pprPrec prec altcon = case altcon of
-        DataAlt dc as xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) as ++ map (pprBndr CaseBind) xs)
-        LiteralAlt l     -> ppr l
-        DefaultAlt       -> text "_"
+        DataAlt dc xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) xs)
+        LiteralAlt l  -> ppr l
+        DefaultAlt    -> text "_"
 
 appPrec, opPrec, noPrec :: Num a => a
 appPrec = 2 -- Argument of a function application

@@ -48,7 +48,6 @@ generateVHDL modName = do
         (normalized,netlistState) <- normalize    coreHWBindings  topEntity
         netlist                   <- genNetlist   netlistState    normalized topEntity
         let vhdl                  = map ((flip genVHDL) ["work.all"]) netlist
-        --let vhdl = normalized
         return (topEntity,vhdl)
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++

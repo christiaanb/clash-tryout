@@ -179,10 +179,13 @@ slv_type :: HWType -> Doc
 slv_type BitType = text "std_logic"
 slv_type BoolType = text "std_logic"
 slv_type ClockType = text "std_logic"
+slv_type IntegerType = text "integer"
 slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(ProductType _ _) =  text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(SumType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
+slv_type hwtype@(SPType "Integer" _) = text "integer"
 slv_type hwtype@(SPType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype -1, ExprLit Nothing $ ExprNum 0)
+slv_type hwtype = error $ "slv_type: " ++ show hwtype
 --slv_type hwtype@(VecType s e) = text "array" <+> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0) <+> text "of" <+> slv_type e
 
 range :: (Expr,Expr) -> Doc

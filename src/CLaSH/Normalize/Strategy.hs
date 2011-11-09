@@ -14,75 +14,48 @@ import CLaSH.Normalize.Types
 import CLaSH.Normalize.Transformations
 import CLaSH.Util.CoreHW (CoreContext, Term, TransformStep, transformationStep)
 
-normalizeStrategy ::
-  Rewrite NormalizeSession [CoreContext] Term
-normalizeStrategy = keepTrying $ foldl1 (>->) $ map (extractR . bottomupR . tryR . promoteR . transformationStep) steps
-  where
-    steps = [ classopresolution
-            , letFlat
-            , letRemove
-            , etaExpand
-            , caseSimpl
-            , retValSimpl
-            , knownCase
-            , scrutSimpl
-            , funSpec
-            , betaTyReduce
-            , injectNonRepArguments
-            , injectFunctionBindings
-            , betaReduce
-            , appProp
-            , inlineNonRepResult
-            , letRemoveUnused
-            ]
-
 keepTrying r = repeatR (r .+ failR "done")
+bottomupTry  = extractR . bottomupR . tryR . promoteR . transformationStep
 
-specializePolymorphicValues ::
-  Rewrite NormalizeSession [CoreContext] Term
-specializePolymorphicValues = extractR $ foldl1 (>->) $ map (keepTrying . bottomupR . tryR . promoteR . transformationStep) steps
+normalizeStrategy = foldl1 (>->) steps
   where
-    steps = [ funSpec
-            , betaTyReduce
+    steps = [ reprStrategy
+            , keepTrying ((bottomupTry classopresolution) !-> reprStrategy)
+            , netlistStrategy
             ]
 
-specializeFunctionValues ::
+reprStrategy ::
   Rewrite NormalizeSession [CoreContext] Term
-specializeFunctionValues = extractR $ foldl1 (>->) $ map (bottomupR . tryR . promoteR . transformationStep) steps
+reprStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
   where
-    steps = [ injectNonRepArguments
-            , injectFunctionBindings
+    steps = [ betaTyReduce
+            , betaReduce
+            , caseApp
+            , caseLet
+            , caseLam
+            , caseCon
+            , caseCase
+            , letApp
+            , letLam
+            , bindLam
+            , bindBox
+            , inlineBox
+            , etaExpand
+            , funcSpec
+            , typeSpec
             ]
 
-inlineNonReps ::
+netlistStrategy ::
   Rewrite NormalizeSession [CoreContext] Term
-inlineNonReps = extractR $ bottomupR $ tryR $ promoteR $ transformationStep inlineNonRepResult
-
-cleanUp ::
-  Rewrite NormalizeSession [CoreContext] Term
-cleanUp = extractR $ foldl1 (>->) $ map (keepTrying . bottomupR . tryR . promoteR . transformationStep) steps
+netlistStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
   where
-    steps = [ letFlat
-            , letRemove
-            , classopresolution
-            ]
-
-betaNormal ::
-  Rewrite NormalizeSession [CoreContext] Term
-betaNormal = extractR $ foldl1 (>->) $ map (keepTrying . bottomupR . tryR . promoteR . transformationStep) steps
-  where
-    steps = [ betaReduce
-            , appProp
-            ]
-
-misc ::
-  Rewrite NormalizeSession [CoreContext] Term
-misc = extractR $ foldl1 (>->) $ map (keepTrying . bottomupR . tryR . promoteR . transformationStep) steps
-  where
-    steps = [ etaExpand
-            , caseSimpl
-            , retValSimpl
-            , knownCase
+    steps = [ retLam
+            , retLet
+            , inlineVar
+            , emptyLet
+            , letFlat
+            , deadCode
             , scrutSimpl
-            , letRemoveUnused
+            , caseSimpl
+            , caseRemove
             ]

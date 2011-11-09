@@ -28,6 +28,7 @@ import CLaSH.Util.CoreHW.Syntax   (Var, Term, TyVar)
 type CoreBinding = (Var, Term)
 
 data CoreContext = AppFirst
+                 | AppSecond
                  | TyAppFirst
                  | LetBinding   [Var]
                  | LetBody      [Var]

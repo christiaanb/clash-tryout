@@ -2,7 +2,6 @@
 {-# LANGUAGE PatternGuards #-}
 module CLaSH.Util.CoreHW.CoreToCoreHW
   ( coreExprToTerm
-  , runParseM
   )
 where
 
@@ -10,128 +9,34 @@ where
 import Control.Monad (join, liftM, liftM2)
 
 -- GHC API
+import CoreFVs    (exprSomeFreeVars)
 import CoreSyn    (CoreExpr, Expr(..), Unfolding(..), Bind(..), AltCon(..))
 import CoreUnfold (exprIsConApp_maybe)
 import Coercion   (isCoVar)
 import DataCon    (DataCon,dataConName,dataConTyCon)
 import FastString (mkFastString)
-import Id         (mkSysLocalM)
+import Id         (mkSysLocalM,isDataConWorkId_maybe)
 import TyCon      (isNewTyCon)
 import Var        (Var,isTyVar)
+import VarSet     (isEmptyVarSet)
 
 -- Internal Modules
 import CLaSH.Util
+import qualified CLaSH.Util.CoreHW.Constants as S
 import qualified CLaSH.Util.CoreHW.Syntax as S
 import qualified CLaSH.Util.CoreHW.Tools  as S
 import CLaSH.Util.Pretty
 
-data Description = Opaque String | ArgumentOf Description
-
-descriptionString  ::
-  Description
-  -> String
-descriptionString = go (0 :: Int)
-  where
-    go n (Opaque s)     = s ++ (if n > 0 then show n else "")
-    go n (ArgumentOf d) = go (n+1) d
-
-desc ::
-  S.Term
-  -> Description
-desc t = case t of
-  S.Var x                  -> Opaque (S.varString x)
-  S.Literal  _             -> Opaque "value"
-  S.TyLambda _ _           -> Opaque "value"
-  S.Lambda _ _             -> Opaque "value"
-  S.Data _ _ _             -> Opaque "value"
-  S.TyApp e1 _             -> argOf (desc e1)
-  S.App e1 _               -> argOf (desc e1)
-  S.Case _ _ _           -> Opaque "case"
-  S.LetRec _ e             -> desc e
-
-argOf ::
-  Description
-  -> Description
-argOf = ArgumentOf
-
-newtype ParseM a = ParseM { unParseM :: UniqSupply -> (UniqSupply, [(Var, S.Term)], a) }
-
-instance Functor ParseM where
-  fmap = liftM
-
-instance Monad ParseM where
-  return x    = ParseM $ \s -> (s, [], x)
-  mx >>= fmxy = ParseM $ \s -> case unParseM mx s of
-    (s1,floats1,x) -> case unParseM (fmxy x) s1 of
-      (s2,floats2,y) -> (s2,floats1 ++ floats2,y)
-
-instance MonadUnique ParseM where
-  getUniqueSupplyM = ParseM $ \us -> case splitUniqSupply us of (us1,us2) -> (us1, [], us2)
-
-runParseM' ::
-  UniqSupply
-  -> ParseM a
-  -> (UniqSupply,([(Var,S.Term)], a))
-runParseM' us act = (us',(floats, x))
-  where
-    (us', floats, x) = unParseM act us
-
-runParseM ::
-  UniqSupply
-  -> ParseM S.Term
-  -> (UniqSupply, S.Term)
-runParseM us = (second $ \(xes,e) -> case (xes,e) of ([],_) -> e; _ -> S.LetRec xes e) . runParseM' us
-
-freshFloatId ::
-  String
-  -> S.Term
-  -> ParseM (Maybe (Var, S.Term), Var)
-freshFloatId _ (S.Var x) = return (Nothing, x)
-freshFloatId n e         = fmap (\x -> (Just (x, e), x)) $ mkSysLocalM (mkFastString n) (S.termType e)
-
-floatIt ::
-  [(Var,S.Term)]
-  -> ParseM ()
-floatIt floats = ParseM $ \s -> (s, floats, ())
-
-nameIt ::
-  Description
-  -> S.Term
-  -> ParseM Var
-nameIt d e = freshFloatId (descriptionString d) e >>= \(mbFloat, x) -> floatIt (maybeToList mbFloat) >> return x
-
-bindFloats ::
-  ParseM S.Term
-  -> ParseM S.Term
-bindFloats = bindFloatsWith . fmap ((,) [])
-
-bindFloatsWith ::
-  ParseM ([(Var, S.Term)], S.Term)
-  -> ParseM S.Term
-bindFloatsWith act = ParseM $ \s -> case unParseM act s of
-  (s, floats, (xes, e)) -> case (floats ++ xes) of
-    [] -> (s, [], e)
-    xs -> (s, [], S.LetRec xs e)
-
-appE ::
-  S.Term
-  -> S.Term
-  -> ParseM S.Term
-appE e1 e2 = fmap (e1 `S.App`) $ nameIt (argOf (desc e1)) e2
-
 conAppToTerm ::
   DataCon
   -> [CoreExpr]
-  -> ParseM S.Term
+  -> S.Term
 conAppToTerm dc es
   | isNewTyCon (dataConTyCon dc)
   = error ("newtype not supported: " ++ pprString dc ++ " " ++ pprString es)
   | otherwise
-  = do
-    valEs' <- mapM coreExprToTerm valEs
-    (_,xs) <- mapAccumLM (\d valE -> fmap ((,) (argOf d)) $ nameIt (argOf d) valE)
-                         (Opaque (S.nameString (dataConName dc))) valEs'
-    return $ S.Data dc tys' xs
+  = let valEs' = map coreExprToTerm valEs
+    in foldl S.App (foldl S.TyApp (S.Data dc) tys') valEs'
   where
     (tys', valEs) = takeWhileJust fromType_maybe es
 
@@ -140,32 +45,40 @@ conAppToTerm dc es
 
 coreExprToTerm ::
   CoreExpr
-  -> ParseM S.Term
+  -> S.Term
 coreExprToTerm = term
   where
     term e | Just (dc, univTys, es) <- exprIsConApp_maybe (const NoUnfolding) e
            = conAppToTerm dc (map Type univTys ++ es)
-    term (Var x)                 = return $ S.Var x
-    term (Lit l)                 = return $ S.Literal l
-    term (App eFun (Type tyArg)) = fmap (flip S.TyApp tyArg) (term eFun)
-    term (App eFun eArg)         = join $ liftM2 appE (term eFun) (term eArg)
-    term (Lam x e) | isTyVar x   = fmap (S.TyLambda x) (bindFloats (term e))
-                   | otherwise   = fmap (S.Lambda x)   (bindFloats (term e))
-    term (Let (NonRec x e1) e2)  = bindFloatsWith (liftM2 (,) (fmap (:[]) $ secondM term (x,e1)) (term e2))
-    term (Let (Rec xes) e)       = bindFloatsWith (liftM2 (,) (mapM (secondM term) xes) (term e))
-    term (Case e b ty alts)      = liftM2 (\e' alts' -> S.Case e' ty alts') (term e) (mapM alt alts)
+    term (Var x)                 = case (isDataConWorkId_maybe x) of
+                                    Just dc | isNewTyCon (dataConTyCon dc) -> error $ "newtype not supported: " ++ pprString dc
+                                            | otherwise                    -> S.Data dc
+                                    Nothing -> case (S.varString x `elem` S.builtinIds) of
+                                      True -> S.Prim x
+                                      False -> S.Var x
+
+    term (Lit l)                 = S.Literal l
+    term (App eFun (Type tyArg)) = S.TyApp (term eFun) tyArg
+    term (App eFun eArg)         = S.App (term eFun) (term eArg)
+    term (Lam x e) | isTyVar x   = S.TyLambda x (term e)
+                   | otherwise   = S.Lambda x (term e)
+    term (Let (NonRec x e1) e2)  = S.LetRec [(x, term e1)] (term e2)
+    term (Let (Rec xes) e)       = S.LetRec (map (second term) xes) (term e)
+    term (Case e b ty alts)      = S.Case (term e) ty (map (alt b) alts)
     term (Cast e co)             = error $ "cast not supported: " ++ pprString (e,co)
     term (Note _ e)              = term e
-    term (Type ty)               = error $ "Type at non-argument position: " ++ pprString ty
+    term (Type ty)               = error $ "Type at non-argument position not supported: " ++ pprString ty
     term (Coercion co)           = error $ "coercion not supported" ++ pprString co
 
-    alt (DEFAULT   , [], e)      = fmap ((,) S.DefaultAlt)         $ bindFloats (term e)
-    alt (LitAlt l  , [], e)      = fmap ((,) (S.LiteralAlt l))     $ bindFloats (term e)
-    alt (DataAlt dc, xs, e)      = fmap ((,) (S.DataAlt dc as zs)) $ bindFloats (term e)
+    alt _ (DEFAULT   , [], e)    = (S.DefaultAlt, term e)
+    alt _ (LitAlt l  , [], e)    = (S.LiteralAlt l, term e)
+    alt b (DataAlt dc, xs, e)    = case (isEmptyVarSet $ exprSomeFreeVars (`elem` [b]) e) of
+          True  -> case (as,cs) of
+            ([],[]) -> (S.DataAlt dc zs, term e)
+            _       -> error $ "Patterns binding coercions or type variables are not supported: " ++ pprString (dc,xs,e)
+          False -> error $ "Exprs binding scrutinee are not supported: " ++ pprString (dc,xs,e)
       where
         (as,ys) = span isTyVar xs
-        (_ ,zs) = case span isCoVar ys of
-          ([],zs') -> ([],zs')
-          _        -> error $ "coercions tyvars not supported: " ++ pprString (dc,xs,e)
+        (cs,zs) = span isCoVar ys
 
-    alt lt                       = error $ "coreExprToTerm: " ++ pprString lt
+    alt b lt                     = error $ "coreExprToTerm: " ++ pprString lt
