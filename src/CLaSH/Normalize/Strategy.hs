@@ -43,6 +43,7 @@ reprStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
             , etaExpand
             , funcSpec
             , typeSpec
+            , funcLift
             ]
 
 netlistStrategy ::

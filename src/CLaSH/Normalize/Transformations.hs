@@ -160,6 +160,7 @@ inlineBox _ _ = fail "inlineBox"
 
 etaExpand :: NormalizeStep
 etaExpand (AppFirst:cs)  expr = fail "eta"
+etaExpand (AppSecond:cs) expr = fail "eta"
 
 etaExpand ctx expr | isFun expr && not (isLam expr) = do
   let argTy = (fst . Maybe.fromMaybe (error "etaExpand splitFunTy") . Type.splitFunTy_maybe . getTypeFail) expr
@@ -207,6 +208,12 @@ typeSpec ctx e@(TyApp e1 ty)
 typeSpec _ _ = fail "typeSpec"
 
 funcLift :: NormalizeStep
+funcLift ctx e
+  | (Prim f, args) <- collectArgs e
+  , any (\a -> either isFun (const False) a && not (tyHasFreeTyVars . either getTypeFail id $ a)) args
+  = do
+    error $ pprString e
+
 funcLift _ _ = fail "funcLift"
 
 classopresolution c expr@(App (TyApp (Var sel) ty) (Var dict)) = do
@@ -222,33 +229,6 @@ classopresolution c expr@(App (TyApp (Var sel) ty) (Var dict)) = do
     Nothing -> fail "classopresolution"
 
 classopresolution _ _ = fail "classopresolution"
-
---injectNonRepArguments :: NormalizeStep
---injectNonRepArguments ctx expr@(App e arg)
---  | (Var f, args) <- collectArgs e
---  = do
---    repr  <- liftQ $ isRepr arg
---    bndrs <- fmap (Map.keys) $ (liftQ . lift . lift) $ Label.gets nsBindings
---    let interesting = (arg `elem` bndrs)
---    case interesting of
---      True -> do
---        bodyMaybe <- liftQ $ getGlobalExpr f
---        case bodyMaybe of
---          Just body -> do
---            argParams <- liftQ $ mapM
---                          (\v -> case v of
---                              Left a  -> mkBinderFor   a "paramArg"
---                              Right t -> mkTyBinderFor t "paramType"
---                          ) args
---            let newArgs = map (\v -> if Var.isTyVar v then Right (Type.mkTyVarTy v) else Left v) argParams
---            let newBody = mkLams argParams $ mkApps body (newArgs ++ [Left arg])
---            newf <- liftQ $ mkFunction f newBody
---            let newExpr = mkApps (Var newf) args
---            changed ("injectNonRepArguments: " ++ varStringUniq arg) expr newExpr
---          Nothing -> fail "injectNonRepArguments"
---      False -> fail "injectNonRepArguments"
-
---injectNonRepArguments _ _ = fail "injectApplicableArguments"
 
 retLam :: NormalizeStep
 retLam ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet expr) = do
