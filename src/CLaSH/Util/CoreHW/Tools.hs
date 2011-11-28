@@ -28,6 +28,7 @@ module CLaSH.Util.CoreHW.Tools
   , mkApps
   , mkLams
   , isVar
+  , isCon
   )
 where
 
@@ -200,8 +201,17 @@ isLet ::
 isLet (LetRec _ _) = True
 isLet _            = False
 
+isVar ::
+  Term
+  -> Bool
 isVar (Var _) = True
 isVar _       = False
+
+isCon ::
+  Term
+  -> Bool
+isCon (Data _) = True
+isCon _        = False
 
 termString ::
   Term

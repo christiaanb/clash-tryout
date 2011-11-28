@@ -28,6 +28,7 @@ module CLaSH.Normalize.Transformations
   , scrutSimpl
   , caseSimpl
   , caseRemove
+  , appSimpl
   )
 where
 
@@ -367,3 +368,16 @@ caseRemove ctx e@(Case scrut ty [(DataAlt dc bndrs,expr)]) | not usesVars = chan
   where
     usesVars = exprUsesBinders bndrs expr
 caseRemove _ _ = fail "caseRemove"
+
+appSimpl :: NormalizeStep
+appSimpl ctx e@(App appf arg)
+  | (f, _) <- collectArgs appf
+  , isVar f || isCon f = do
+  localVar <- liftQ $ isLocalVar arg
+  case localVar of
+    True  -> fail "appSimpl"
+    False -> do
+      argId <- liftQ $ mkBinderFor "arg" arg
+      changed "appSimpl" e (LetRec [(argId,arg)] (App f (Var argId)))
+
+appSimpl _ _ = fail "appSimpl"
