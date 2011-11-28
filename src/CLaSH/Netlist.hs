@@ -180,6 +180,9 @@ mkConcSm (bndr, Literal lit) = do
   let comment = genComment bndr (pprString lit) []
   return  (comment:mkUncondAssign (bndr,bndrType) (ExprLit Nothing $ ExprNum i), [])
 
+mkConcSm (bndr, Data dc)
+  = genApplication bndr (DataCon.dataConWorkId dc) []
+
 mkConcSm (bndr, expr) = Error.throwError $ $(curLoc) ++ "Not in normal form: let-bound expr is not a Lit, Var, Case or App:\n" ++ pprString expr
 
 genApplication ::
