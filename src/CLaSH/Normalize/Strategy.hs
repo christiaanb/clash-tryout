@@ -28,7 +28,7 @@ reprStrategy ::
   Rewrite NormalizeSession [CoreContext] Term
 reprStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
   where
-    steps = [ betaTyReduce
+    steps = [ iotaReduce
             , betaReduce
             , caseApp
             , caseLet

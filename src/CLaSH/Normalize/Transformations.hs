@@ -1,6 +1,6 @@
 {-# LANGUAGE PatternGuards #-}
 module CLaSH.Normalize.Transformations
-  ( betaTyReduce
+  ( iotaReduce
   , betaReduce
   , caseApp
   , caseLet
@@ -60,12 +60,12 @@ import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, partitionM, secondM, second)
-import CLaSH.Util.CoreHW (CoreContext(..), Term(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind)
+import CLaSH.Util.CoreHW (CoreContext(..), Term(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon)
 import CLaSH.Util.Pretty (pprString)
 
-betaTyReduce :: NormalizeStep
-betaTyReduce ctx e@(TyApp (TyLambda tv expr) t) = substituteType tv t ctx expr >>= (changed "betaTY" e)
-betaTyReduce _ _ = fail "betaTy"
+iotaReduce :: NormalizeStep
+iotaReduce ctx e@(TyApp (TyLambda tv expr) t) = substituteType tv t ctx expr >>= (changed "iota" e)
+iotaReduce _ _ = fail "betaTy"
 
 betaReduce :: NormalizeStep
 betaReduce ctx e@(App (Lambda bndr expr) arg)   = changed "beta" e $ LetRec [(bndr,arg)] expr
