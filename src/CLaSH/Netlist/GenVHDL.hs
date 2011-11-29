@@ -35,7 +35,7 @@ entity m = text "entity" <+> text (_modName m) <+> text "is" $$
             text "end" <+> text "entity" <+> text (_modName m) <> semi
 
   where ports = [text i <+> colon <+> text "in" <+> slv_type ran | (i,ran) <- _modInputs m ] ++
-                [text i <+> colon <+> text "out" <+> slv_type ran | (i,ran) <- _modOutptus m ]
+                [text i <+> colon <+> text "out" <+> slv_type ran | (i,ran) <- _modOutputs m ]
 
 architecture :: Module -> Doc
 architecture m = text "architecture" <+> text "str" <+> text "of" <+>  text (_modName m) <+> text "is" $$

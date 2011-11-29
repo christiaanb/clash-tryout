@@ -42,7 +42,7 @@ type Ident = String
 data Module = Module {
     _modName    :: Ident
   , _modInputs  :: [(Ident,HWType)]
-  , _modOutptus :: [(Ident,HWType)]
+  , _modOutputs :: [(Ident,HWType)]
   , _modDecls   :: [Decl]
   } deriving (Eq,Ord,Show)
 
