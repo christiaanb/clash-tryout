@@ -32,7 +32,7 @@ import CLaSH.Netlist.Constants
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.CoreHW (Var, Term(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar)
+import CLaSH.Util.CoreHW (Var, Term(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -75,7 +75,8 @@ genModule' modName modExpr = do
   LabelM.modify nlModCnt (+1)
   let modName'     = ((++ (show modCnt)) . (\v -> if null v then (v ++ "Component_") else (v ++ "_")) . mkVHDLBasicId . varString) modName
   (assigns,clocks) <- fmap unzip $ mapM mkConcSm binds
-  let modInps      = (zip argNames argTypes) ++ (List.nub $ concat clocks)
+  let modInps'     = (zip argNames argTypes) ++ (List.nub $ concat clocks)
+  let modInps      = filter (not . untranslatableHType . snd) modInps'
   let modOutps     = [(resName,resType)]
   modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (varStringUniq d) t Nothing) (filter ((/= res) . fst) binds)
   let modAssigns   = concat assigns
@@ -87,25 +88,24 @@ mkConcSm ::
 
 mkConcSm (bndr, Var v) = genApplication bndr v []
 
-mkConcSm (bndr, app@(App _ _))
-  | (Var f, args) <- collectExprArgs app
-  , all isVar args
-  = genApplication bndr f $ map (\e -> case e of Var x -> x) args
-
-mkConcSm (bndr, app@(App _ _))
-  | (Prim f, args) <- collectExprArgs app
-  = genApplication bndr f $ map (\e -> case e of Var x -> x) $ filter varArg args
-  where
-    varArg (Var _) = True
-    varArg _       = False
-
-mkConcSm (bndr, app@(App _ _))
-  | (Data dc, args) <- collectExprArgs app
-  , all isVar args
-  = genApplication bndr (DataCon.dataConWorkId dc) $ map (\e -> case e of Var x -> x) args
-
 mkConcSm (bndr, app@(App _ _)) = do
-  Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
+  let (appF, args) = collectExprArgs app
+  args'            <- Monad.filterM (fmap not . hasUntranslatableType) args
+  case appF of
+    Var f -> case (all isVar args') of
+      True  -> genApplication bndr f args'
+      False -> Error.throwError $ $(curLoc) ++ "Not in normal form: Var-application with non-Var arguments:\n" ++ pprString app
+    Data dc -> case (all isVar args') of
+      True  -> genApplication bndr (DataCon.dataConWorkId dc) args'
+      False -> Error.throwError $ $(curLoc) ++ "Not in normal form: Data-application with non-Var arguments:\n" ++ pprString app
+    Prim f -> case (List.lookup (varString f) builtinBuilders) of
+      Just (argCount, builder) -> do
+        args'' <- Monad.filterM isRepr args
+        if length args'' == argCount
+          then builder bndr args''
+          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (bndr,app,args'')
+      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive that is  not a known builtin: " ++ pprString (bndr,app)
+    _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
 mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
   let comment = genComment bndr (pprString expr) []
@@ -147,7 +147,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) _ alts)) = do
   let comment = genComment bndr (pprString expr) []
   scrutHWType <- mkHType scrut
   bndrType    <- mkHType bndr
-  scrutExpr   <- varToExpr scrut
+  scrutExpr   <- varToExpr (Var scrut)
   (enums, cmp) <- case scrutHWType of
     SumType _ enums -> do
       return (map (ExprLit (Just $ htypeSize scrutHWType) . ExprNum . toInteger) [0..(length enums)-1], scrutExpr)
@@ -163,7 +163,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) _ alts)) = do
       return (es,cmpE)
     other -> error $ "mkConcSm (bndr, expr@(Case (Var scrut) _ _ alts)) " ++ show scrutHWType ++ show scrutExpr
   altcons <- mapM (\(DataAlt dc _, _) -> fmap (enums!!) $ dataConIndex scrut dc) $ tail alts
-  (defaultExpr:otherExprs) <- mapM (varToExpr . (\(_,Var v) -> v)) alts
+  (defaultExpr:otherExprs) <- mapM (varToExpr . snd) alts
   let caseExpr = ExprCase cmp (zip (map (:[]) altcons) otherExprs) (Just defaultExpr)
   return (comment:(mkUncondAssign (bndr,bndrType) caseExpr),[])
 
@@ -188,7 +188,7 @@ mkConcSm (bndr, expr) = Error.throwError $ $(curLoc) ++ "Not in normal form: let
 genApplication ::
   Var
   -> Var
-  -> [Var]
+  -> [Term]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genApplication dst f args =  do
   nonEmptyDst <- hasNonEmptyType dst
@@ -247,39 +247,26 @@ genApplication dst f args =  do
             IdInfo.DataConWrapId dc -> do
               error "genApp dataConWrap"
             IdInfo.VanillaId -> do
-              case (List.lookup (varString f) builtinBuilders) of
-                Just (argCount, builder) ->
-                  if length args == argCount
-                    then builder dst args
-                    else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (dst,f,args)
-                Nothing -> do
-                  normalized <- isNormalizedBndr f
-                  if normalized
+              normalized <- isNormalizedBndr f
+              if normalized
+                then do
+                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f
+                  let clocks = filter ((== ClockType) . snd) modInps
+                  let clocksN = filter ((/= ClockType) . snd) modInps
+                  if (length clocks + length args) == (length modInps)
                     then do
-                      modu@(Module modName modInps [modOutps] _)  <- genModule f
-                      let clocks = filter ((== ClockType) . snd) modInps
-                      let clocksN = filter ((/= ClockType) . snd) modInps
-                      if (length clocks + length args) == (length modInps)
-                        then do
-                          let dstName = (varStringUniq dst)
-                          args' <- mapM varToExpr args
-                          let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
-                          let inpsAssign = zip (map fst clocksN) args'
-                          let outpAssign  = (fst modOutps, ExprVar dstName)
-                          let comment = genComment dst (pprString f) args
-                          return ([comment, InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
-                        else do
-                          Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
+                      let dstName = (varStringUniq dst)
+                      args' <- mapM varToExpr args
+                      let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
+                      let inpsAssign = zip (map fst clocksN) args'
+                      let outpAssign  = (fst modOutps, ExprVar dstName)
+                      let comment = genComment dst (pprString f) args
+                      return ([comment, InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                     else do
-                      Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
-            IdInfo.ClassOpId cls -> do
-              case (List.lookup (varString f) builtinBuilders) of
-                Just (argCount, builder) ->
-                  if length args == argCount
-                    then builder dst args
-                    else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (dst,f,args)
-                Nothing -> do
-                  Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
+                      Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
+                else do
+                  Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has " ++ (if untranslatableHType dstType then "untranslatable" else "translatable") ++ " type: " ++ show dstType
+            _ -> Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
         else do
           normalized <- isNormalizedBndr f
           if normalized
@@ -298,37 +285,28 @@ genApplication dst f args =  do
                   return ([comment, InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                 else do
                   Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
-            else do
-              case (List.lookup (varString f) builtinBuilders) of
-                Just (argCount, builder) ->
-                  if length args == argCount
-                    then builder dst args
-                    else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (dst,f,args)
-                Nothing -> do
-                  case args of
-                    [] -> (varToExpr f) >>= \v -> return (mkUncondAssign (dst, dstType) v,[])
-                    _ -> Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
+            else Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
     else
       return ([],[])
 
 type BuiltinBuilder =
   Var
-  -> [Var]
+  -> [Term]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 
 type BuilderTable = [(String, (Int, BuiltinBuilder))]
 
 builtinBuilders :: BuilderTable
 builtinBuilders =
-  [ ("xorB" , (2, genBinaryOperator "xorB" Xor))
-  , ("andB" , (2, genBinaryOperator "andB" And))
-  , ("orB"  , (2, genBinaryOperator "orB" Or ))
-  , ("notB" , (1, genUnaryOperator  "notB" LNeg))
+  [ ("xorB"               , (2, genBinaryOperator "xorB" Xor))
+  , ("andB"               , (2, genBinaryOperator "andB" And))
+  , ("orB"                , (2, genBinaryOperator "orB"  Or ))
+  , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
   --, ("delay", (3, genDelay))
-  , ("plusUnsigned"    , (2, genBinaryOperatorSLV "(+)" Plus))
-  , ("minUnsigned"    , (2, genBinaryOperatorSLV "(-)" Minus))
+  , ("plusUnsigned"       , (2, genBinaryOperatorSLV "(+)" Plus))
+  , ("minUnsigned"        , (2, genBinaryOperatorSLV "(-)" Minus))
   , ("unsignedFromInteger", (1, genFromInteger))
-  , ("smallInteger", (1, genSmallInteger))
+  --, ("smallInteger", (1, genSmallInteger))
   --, ("+>>"  , (2, genShiftIntoL))
   --, ("vlast", (1, genVLast))
   --, ("singleton", (1, genSingleton))
@@ -365,22 +343,12 @@ builtinBuilders =
 
 genFromInteger :: BuiltinBuilder
 genFromInteger dst [arg] = do
-  arg' <- varToExpr arg
+  lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
   let litExpr = case dstType of
-        UnsignedType len -> mkUncondAssign (dst,dstType) (toSLV dstType $ ExprFunCall "to_unsigned" [arg',ExprLit Nothing $ ExprNum $ toInteger len])
+        UnsignedType len -> mkUncondAssign (dst,dstType) (toSLV dstType $ ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
-
-genSmallInteger :: BuiltinBuilder
-genSmallInteger dst [arg] = do
-  argType <- mkHType arg
-  case argType of
-    IntegerType -> do
-      arg' <- varToExpr arg
-      let comment = genComment dst "smallInteger" [arg]
-      return (comment:mkUncondAssign (dst,argType) arg',[])
-    _ -> Error.throwError $ $(curLoc) ++ "I don't actually know how to non-Integer type: " ++ pprString arg ++ " :: " ++ pprString (getTypeFail arg)
 
 --genShiftIntoL :: BuiltinBuilder
 --genShiftIntoL dst [Var elArg,Var vecArg] = do

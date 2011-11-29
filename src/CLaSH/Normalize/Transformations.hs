@@ -29,6 +29,7 @@ module CLaSH.Normalize.Transformations
   , caseSimpl
   , caseRemove
   , appSimpl
+  , inlineUntranslatable
   )
 where
 
@@ -374,10 +375,14 @@ appSimpl ctx e@(App appf arg)
   | (f, _) <- collectArgs appf
   , isVar f || isCon f = do
   localVar <- liftQ $ isLocalVar arg
-  case localVar of
+  untranslatable <- liftQ $ isUntranslatable arg
+  case localVar || untranslatable of
     True  -> fail "appSimpl"
     False -> do
       argId <- liftQ $ mkBinderFor "arg" arg
       changed "appSimpl" e (LetRec [(argId,arg)] (App f (Var argId)))
 
 appSimpl _ _ = fail "appSimpl"
+
+inlineUntranslatable :: NormalizeStep
+inlineUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)

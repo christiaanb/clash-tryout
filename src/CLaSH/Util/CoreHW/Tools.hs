@@ -29,6 +29,7 @@ module CLaSH.Util.CoreHW.Tools
   , mkLams
   , isVar
   , isCon
+  , getIntegerLiteral
   )
 where
 
@@ -45,7 +46,7 @@ import qualified Data.Maybe          as Maybe
 import DataCon    (dataConWorkId)
 import FastString (mkFastString)
 import Id         (idType,mkSysLocalM)
-import Literal    (literalType)
+import Literal    (Literal(..), literalType)
 import Name       (Name, mkInternalName, nameOccName, getOccString)
 import OccName    (mkVarOcc, occNameString)
 import SrcLoc     (noSrcSpan)
@@ -292,6 +293,23 @@ collectArgs = go []
     go args (App e1 e2) = go (Left e2:args) e1
     go args (TyApp e t) = go (Right t:args) e
     go args e           = (e, args)
+
+getIntegerLiteral ::
+  (Error.MonadError String m, State.MonadState s m, Functor m)
+  => s :-> (Map.Map TyCon.TyCon Integer)
+  -> Term
+  -> m Integer
+getIntegerLiteral tfpSynLens expr@(App _ _) =
+  case collectArgs expr of
+    (_, [Left (Literal (MachInt integer))])    -> return integer
+    (_, [Left (Literal (MachInt64 integer))])  -> return integer
+    (_, [Left (Literal (MachWord integer))])   -> return integer
+    (_, [Left (Literal (MachWord64 integer))]) -> return integer
+    _ -> Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString expr
+    --(Var f, [Type decTy, decDict, Type numTy, numDict, arg])
+    --  | getFullString f == "Types.Data.Num.Ops.fromIntegerT" -> do
+    --    fromTfpInt tfpSynLens decTy
+getIntegerLiteral _ e = Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString e
 
 fromTfpInt ::
   (Error.MonadError String m, State.MonadState s m, Functor m)

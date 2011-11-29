@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeOperators #-}
 module CLaSH.Netlist.Tools
-  ( isReprType
+  ( isRepr
+  , isReprType
   , assertReprType
   , mkHType
   , splitNormalized
@@ -19,6 +20,8 @@ module CLaSH.Netlist.Tools
   , toSLV
   , fromSLV
   , genBinaryOperatorSLV
+  , untranslatableHType
+  , hasUntranslatableType
   )
 where
 
@@ -46,6 +49,14 @@ import CLaSH.Util (curLoc,makeCached)
 import CLaSH.Util.CoreHW (CoreBinding, TypedThing(..), Term(..), Var, nameString, varStringUniq, tyHasFreeTyVars,
   flattenLets, fromTfpInt, collectBndrs, dataConIndex)
 import CLaSH.Util.Pretty (pprString)
+
+isRepr ::
+  TypedThing t
+  => t
+  -> NetlistSession Bool
+isRepr tyThing = case getType tyThing of
+  Nothing -> return False
+  Just t  -> isReprType t
 
 isReprType ::
   Type.Type
@@ -95,7 +106,6 @@ mkHType' ty | tyHasFreeTyVars ty = Error.throwError ($(curLoc) ++ "Cannot create
           return $ UnsignedType len
         "Bit"       -> return BitType
         "Bool"      -> return BoolType
-        "()"        -> return UnitType
         "Int#"      -> return IntegerType
         "ByteArray#" -> return ByteArrayType
         "Component" -> Error.throwError ($(curLoc) ++ "Component type is not representable, it has to be desugared")
@@ -141,15 +151,34 @@ splitNormalized expr = do
     (args, binds, Var res) -> return (args, binds, res)
     _                      -> Error.throwError $ $(curLoc) ++ "not in normal form: " ++ (pprString expr)
 
+emptyType ::
+  HWType
+  -> Bool
+emptyType (SumType _ [_]) = True
+emptyType _               = False
+
+untranslatableHType ::
+  HWType
+  -> Bool
+untranslatableHType IntegerType     = True
+untranslatableHType ByteArrayType   = True
+untranslatableHType (SPType _ args) = any untranslatableHType $ concatMap snd args
+untranslatableHType x               = emptyType x
+
+hasUntranslatableType ::
+  TypedThing t
+  => t
+  -> NetlistSession Bool
+hasUntranslatableType thing =
+  (fmap untranslatableHType $ mkHType thing) `Error.catchError` (\e -> return True)
+
 hasNonEmptyType ::
   (TypedThing t, Outputable.Outputable t)
   => t
   -> NetlistSession Bool
 hasNonEmptyType thing = do
   thingTy <- mkHType thing
-  case thingTy of
-    UnitType -> return False
-    _ -> return True
+  return $ not $ emptyType thingTy
 
 mkUncondAssign ::
   (Var, HWType)
@@ -170,13 +199,14 @@ mkAssign (dst,dstTy) cond falseExpr = [NetAssign dstName assignExpr]
       Just (condExpr,trueExpr) -> ExprCond condExpr trueExpr falseExpr
 
 varToExpr ::
-  Var
+  Term
   -> NetlistSession Expr
-varToExpr var = case Id.isDataConWorkId_maybe var of
+varToExpr (Var var) = case Id.isDataConWorkId_maybe var of
   Just dc -> do
     varTy <- mkHType var
     dataconToExpr varTy dc
   Nothing -> return $ ExprVar $ varStringUniq var
+varToExpr e = Error.throwError $ $(curLoc) ++ "not a Var: " ++ pprString e
 
 dataconToExpr ::
   HWType
@@ -244,7 +274,7 @@ genBinaryOperator ::
   String
   -> BinaryOp
   -> Var
-  -> [Var]
+  -> [Term]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genBinaryOperator opS op dst args = do
   dstType     <- mkHType dst
@@ -256,7 +286,7 @@ genBinaryOperatorSLV ::
   String
   -> BinaryOp
   -> Var
-  -> [Var]
+  -> [Term]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genBinaryOperatorSLV opS op dst args = do
   dstType     <- mkHType dst
@@ -269,7 +299,7 @@ genUnaryOperator ::
   String
   -> UnaryOp
   -> Var
-  -> [Var]
+  -> [Term]
   -> NetlistSession ([Decl],[(Ident,HWType)])
 genUnaryOperator opS op dst [arg] = do
   dstType <- mkHType dst
@@ -280,7 +310,7 @@ genUnaryOperator opS op dst [arg] = do
 genComment ::
   Var
   -> String
-  -> [Var]
+  -> [Term]
   -> Decl
 genComment dst f args = CommentDecl $ pprString dst ++ " = " ++ f ++ (concatMap (\x -> " " ++ pprString x) args) ++ " :: " ++ ((pprString . Maybe.fromJust . getType) dst)
 

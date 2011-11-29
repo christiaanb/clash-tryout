@@ -15,6 +15,7 @@ module CLaSH.Normalize.Tools
   , splitNormalizedNonRep
   , getGlobalExpr
   , localFreeVars
+  , isUntranslatable
   )
 where
 
@@ -39,7 +40,7 @@ import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import CLaSH.Netlist.Tools   (isReprType, assertReprType)
+import CLaSH.Netlist.Tools   (isReprType, assertReprType, hasUntranslatableType)
 import CLaSH.Normalize.Types
 import CLaSH.Util            (curLoc, liftErrorState)
 import CLaSH.Util.CoreHW     (Var, Term(..), AltCon(..),CoreBinding, CoreContext(..), TypedThing(..), Type, mkInternalVar, mkTypeVar, cloneVar, flattenLets, collectBndrs, collectArgs, tyHasFreeTyVars, termSomeFreeVars)
@@ -75,6 +76,14 @@ isRepr ::
 isRepr tyThing = case getType tyThing of
   Nothing -> return False
   Just ty -> (liftErrorState nsNetlistState $ isReprType ty) `Error.catchError` (\(msg :: String) -> return False)
+
+isUntranslatable ::
+  (TypedThing t)
+  => t
+  -> NormalizeSession Bool
+isUntranslatable tyThing = case getType tyThing of
+  Nothing -> return True
+  Just ty -> (liftErrorState nsNetlistState $ hasUntranslatableType ty) `Error.catchError` (\(msg :: String) -> return True)
 
 assertRepr ::
   (TypedThing t)

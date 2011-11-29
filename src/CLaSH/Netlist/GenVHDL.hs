@@ -178,7 +178,6 @@ mkSensitivityList (ProcessDecl evs) = nub event_names
 slv_type :: HWType -> Doc
 slv_type BitType = text "std_logic"
 slv_type BoolType = text "std_logic"
-slv_type UnitType = text "std_logic"
 slv_type ClockType = text "std_logic"
 slv_type IntegerType = text "integer"
 slv_type (UnsignedType len) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
