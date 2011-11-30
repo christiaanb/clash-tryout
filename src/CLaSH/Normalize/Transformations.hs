@@ -132,12 +132,12 @@ caseCase _ _ = fail "caseCase"
 
 letApp :: NormalizeStep
 letApp ctx e@(App (LetRec binds expr) arg)  = changed "letApp" e $ LetRec binds (App expr arg)
-letApp ctx e@(TyApp (LetRec binds expr) ty) = liftQ $ Error.throwError $ $(curLoc) ++ "What's a TyApp doing at a let expression?: " ++ pprString e
+letApp ctx e@(TyApp (LetRec binds expr) ty) = changed "letApp" e $ LetRec binds (TyApp expr ty)
 letApp _ _ = fail "letApp"
 
 letLam :: NormalizeStep
 letLam ctx e@(LetRec binds (Lambda bndr body)) = changed "letLam" e $ Lambda bndr $ LetRec binds body
-letLam ctx e@(LetRec binds (TyLambda tv body)) = liftQ $ Error.throwError $ $(curLoc) ++ "What's a TyLambda doing at a let expression?: " ++ pprString e
+letLam ctx e@(LetRec binds (TyLambda tv body)) = changed "letLam" e $ TyLambda tv $ LetRec binds body
 letLam _ _ = fail "letLam"
 
 bindLam :: NormalizeStep
