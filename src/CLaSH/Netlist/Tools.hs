@@ -234,6 +234,7 @@ htypeSize ClockType               = 1
 htypeSize IntegerType             = 32
 htypeSize (UnsignedType len)      = len
 htypeSize (VecType s eType)       = s * htypeSize eType
+htypeSize (SumType _ [_])         = 0
 htypeSize (SumType _ fields)      = ceiling $ logBase 2 $ fromIntegral $ length fields
 htypeSize (ProductType _ fields)  = sum $ map htypeSize fields
 htypeSize (SPType "Integer" _)    = 32
