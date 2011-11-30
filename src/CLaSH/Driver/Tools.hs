@@ -21,9 +21,8 @@ import qualified Name
 import qualified Var
 
 -- Internal Modules
-import CLaSH.Netlist.Constants (builtinIds)
 import CLaSH.Util.Core         (nameToString)
-import CLaSH.Util.CoreHW       (varStringUniq)
+import CLaSH.Util.CoreHW       (varStringUniq,builtinIds)
 import CLaSH.Util.GHC          (loadExtExpr)
 import CLaSH.Util.Pretty       (pprString)
 

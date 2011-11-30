@@ -62,4 +62,5 @@ netlistStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
             , appSimpl
             , letApp
             , inlineUntranslatable
+            , primSpec
             ]

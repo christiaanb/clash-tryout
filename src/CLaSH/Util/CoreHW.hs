@@ -1,5 +1,6 @@
 module CLaSH.Util.CoreHW
-  ( module CLaSH.Util.CoreHW.CoreToCoreHW
+  ( module CLaSH.Util.CoreHW.Constants
+  , module CLaSH.Util.CoreHW.CoreToCoreHW
   , module CLaSH.Util.CoreHW.FreeVars
   , module CLaSH.Util.CoreHW.Syntax
   , module CLaSH.Util.CoreHW.Tools
@@ -9,6 +10,7 @@ module CLaSH.Util.CoreHW
   )
 where
 
+import CLaSH.Util.CoreHW.Constants
 import CLaSH.Util.CoreHW.CoreToCoreHW
 import CLaSH.Util.CoreHW.FreeVars
 import CLaSH.Util.CoreHW.Syntax

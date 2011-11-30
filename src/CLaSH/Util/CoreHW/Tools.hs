@@ -29,6 +29,8 @@ module CLaSH.Util.CoreHW.Tools
   , mkLams
   , isVar
   , isCon
+  , isPrimCon
+  , isPrimFun
   , getIntegerLiteral
   )
 where
@@ -43,6 +45,7 @@ import qualified Data.Map            as Map
 import qualified Data.Maybe          as Maybe
 
 -- GHC API
+import Coercion   (coercionType)
 import DataCon    (dataConWorkId)
 import FastString (mkFastString)
 import Id         (idType,mkSysLocalM)
@@ -96,7 +99,7 @@ termType ::
   -> Type
 termType e = case e of
   Var x         -> idType x
-  Prim x        -> idType x
+  Prim x        -> primType x
   Literal l     -> literalType l
   TyLambda tv e -> tv `mkForAllTy` termType e
   Lambda v e    -> idType v `mkFunTy` termType e
@@ -106,6 +109,13 @@ termType e = case e of
   LetRec _ e    -> termType e
   App _ _       -> case collectArgs e of
                     (fun, args) -> applyTypeToArgs (termType fun) args
+
+primType p = case p of
+  PrimFun  x -> idType x
+  PrimCon  x -> idType (dataConWorkId x)
+  PrimDict x -> idType x
+  PrimDFun x -> idType x
+  PrimCo   x -> coercionType x
 
 applyTypeToArgs :: Type -> [Either Term Type] -> Type
 applyTypeToArgs opTy []              = opTy
@@ -213,6 +223,18 @@ isCon ::
   -> Bool
 isCon (Data _) = True
 isCon _        = False
+
+isPrimCon ::
+  Term
+  -> Bool
+isPrimCon (Prim (PrimCon _)) = True
+isPrimCon _                  = False
+
+isPrimFun ::
+  Term
+  -> Bool
+isPrimFun (Prim (PrimFun _)) = True
+isPrimFun _                  = False
 
 termString ::
   Term

@@ -28,11 +28,10 @@ import qualified Var
 
 -- Internal Modules
 import CLaSH.Driver.Types (DriverSession)
-import CLaSH.Netlist.Constants
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.CoreHW (Var, Term(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral)
+import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -98,13 +97,11 @@ mkConcSm (bndr, app@(App _ _)) = do
     Data dc -> case (all isVar args') of
       True  -> genApplication bndr (DataCon.dataConWorkId dc) args'
       False -> Error.throwError $ $(curLoc) ++ "Not in normal form: Data-application with non-Var arguments:\n" ++ pprString app
-    Prim f -> case (List.lookup (varString f) builtinBuilders) of
-      Just (argCount, builder) -> do
-        args'' <- Monad.filterM isRepr args
-        if length args'' == argCount
-          then builder bndr args''
-          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function: " ++ pprString (bndr,app,args'')
-      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive that is  not a known builtin: " ++ pprString (bndr,app)
+    Prim (PrimFun f) -> case (List.lookup (varString f) builtinBuilders) of
+      Just (argCount, builder) -> if length args == argCount
+          then builder bndr args
+          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ " actual:" ++ show (length args) ++"): " ++ pprString (bndr,app,args)
+      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive that is not a known builtin: " ++ pprString (bndr,app)
     _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
 mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
@@ -302,47 +299,46 @@ builtinBuilders =
   , ("andB"               , (2, genBinaryOperator "andB" And))
   , ("orB"                , (2, genBinaryOperator "orB"  Or ))
   , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
-  --, ("delay", (3, genDelay))
+  , ("delay"              , (3, genDelay))
   , ("plusUnsigned"       , (2, genBinaryOperatorSLV "(+)" Plus))
   , ("minUnsigned"        , (2, genBinaryOperatorSLV "(-)" Minus))
-  , ("unsignedFromInteger", (1, genFromInteger))
-  --, ("smallInteger", (1, genSmallInteger))
-  --, ("+>>"  , (2, genShiftIntoL))
-  --, ("vlast", (1, genVLast))
-  --, ("singleton", (1, genSingleton))
+  , ("unsignedFromInteger", (2, genFromInteger))
+  , ("+>>"                , (6, genShiftIntoL))
+  , ("vlast"              , (2, genVLast))
+  , ("singleton"          , (1, genSingleton))
   ]
 
---genDelay :: BuiltinBuilder
---genDelay state args@[Var initS, clock, Var stateP] = do
---  stateTy <- mkHType state
---  let [stateName,initSName,statePName] = map varToStringUniq [state,initS,stateP]
---  let stateDecl  = NetDecl stateName stateTy Nothing
---  (clockName,clockEdge) <- parseClock clock
---  let resetName  = clockName ++ "Reset"
---  let resetEvent = Event (ExprVar resetName) AsyncLow
---  let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
---  let clockEvent = Event (ExprVar clockName) clockEdge
---  let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
---  let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
---  let comment    = genComment state "delay" args
---  return $ ([stateDecl,comment,register],[(clockName,ClockType),(resetName,ClockType)])
+genDelay :: BuiltinBuilder
+genDelay state args@[Var initS, clock, Var stateP] = do
+  stateTy <- mkHType state
+  let [stateName,initSName,statePName] = map varStringUniq [state,initS,stateP]
+  (clockName,clockEdge) <- parseClock clock
+  let resetName  = clockName ++ "Reset"
+  let resetEvent = Event  (ExprVar resetName) AsyncLow
+  let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
+  let clockEvent = Event  (ExprVar clockName) clockEdge
+  let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
+  let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
+  let comment    = genComment state "delay" args
+  return $ ([comment,register],[(clockName,ClockType),(resetName,ClockType)])
 
---parseClock ::
---  Term
---  -> NetlistSession (Ident,Edge)
---parseClock clock = do
---  case clock of
---    (App _ _) -> do
---      let (Var clockTyCon, [clockNameCString,_]) = CoreSyn.collectArgs clock
---      let (CoreSyn.Var unpackCString, [Lit (Literal.MachStr clockFS)]) = CoreSyn.collectArgs clockNameCString
---      let clockName = FastString.unpackFS clockFS
---      case (Name.getOccString clockTyCon) of
---        "ClockUp"   -> return (clockName,PosEdge)
---        "ClockDown" -> return (clockName,NegEdge)
---    _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
+parseClock ::
+  Term
+  -> NetlistSession (Ident,Edge)
+parseClock clock = do
+  case clock of
+    (App _ _) -> do
+      let appd = collectExprArgs clock
+      let (Data clockDataCon, [clockNameCString,_]) = collectExprArgs clock
+      let (Prim (PrimFun unpackCString), [Literal (Literal.MachStr clockFS)]) = collectExprArgs clockNameCString
+      let clockName = FastString.unpackFS clockFS
+      case (Name.getOccString clockDataCon) of
+        "ClockUp"   -> return (clockName,PosEdge)
+        "ClockDown" -> return (clockName,NegEdge)
+    _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
 
 genFromInteger :: BuiltinBuilder
-genFromInteger dst [arg] = do
+genFromInteger dst [_,arg] = do
   lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
   let litExpr = case dstType of
@@ -350,26 +346,27 @@ genFromInteger dst [arg] = do
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
 
---genShiftIntoL :: BuiltinBuilder
---genShiftIntoL dst [Var elArg,Var vecArg] = do
---  dstType@(VecType len etype) <- mkHType vecArg
---  let [elName,vecName] = map varToStringUniq [elArg,vecArg]
---  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum ((toInteger len) - 1)) (ExprLit Nothing $ ExprNum 1)])
---  let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
---  return (comment:assignExpr,[])
+genShiftIntoL :: BuiltinBuilder
+genShiftIntoL dst [_,_,_,_,Var elArg,Var vecArg] = do
+  dstType@(VecType len etype) <- mkHType vecArg
+  let etypeSize = htypeSize etype
+  let [elName,vecName] = map varStringUniq [elArg,vecArg]
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum ((toInteger $ len * etypeSize) - 1)) (ExprLit Nothing $ ExprNum $ toInteger etypeSize)])
+  let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
+  return (comment:assignExpr,[])
 
---genVLast :: BuiltinBuilder
---genVLast dst [Var vecArg] = do
---  dstType <- mkHType dst
---  let vecName = varToStringUniq vecArg
---  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum 0))
---  let comment = genComment dst "vlast" [Var vecArg]
---  return (comment:selExpr,[])
+genVLast :: BuiltinBuilder
+genVLast dst [_,Var vecArg] = do
+  dstType <- mkHType dst
+  let vecName = varStringUniq vecArg
+  let selExpr = mkUncondAssign (dst,dstType) (ExprSlice vecName (ExprLit Nothing $ ExprNum $ (toInteger $ htypeSize dstType) - 1) (ExprLit Nothing $ ExprNum 0))
+  let comment = genComment dst "vlast" [Var vecArg]
+  return (comment:selExpr,[])
 
---genSingleton :: BuiltinBuilder
---genSingleton dst [Var eArg] = do
---  dstType <- mkHType dst
---  let eName = varToStringUniq eArg
---  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar eName, ExprVar "\"\""])
---  let comment = genComment dst "singleton" [Var eArg]
---  return (comment:assignExpr,[])
+genSingleton :: BuiltinBuilder
+genSingleton dst [Var eArg] = do
+  dstType <- mkHType dst
+  let eName = varStringUniq eArg
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprVar eName)
+  let comment = genComment dst "singleton" [Var eArg]
+  return (comment:assignExpr,[])

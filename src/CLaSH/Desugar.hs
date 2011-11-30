@@ -30,10 +30,10 @@ import CLaSH.Desugar.Strategy
 import CLaSH.Desugar.Types
 import CLaSH.Driver.Tools (getGlobalExpr)
 import CLaSH.Driver.Types (DriverSession,drUniqSupply)
-import CLaSH.Netlist.Constants (builtinIds)
 import CLaSH.Util (curLoc, makeCachedT2)
 import CLaSH.Util.Core (startContext, nameToString, TypedThing(..))
 import CLaSH.Util.Core.Types (tsUniqSupply, tsTransformCounter, emptyTransformState)
+import CLaSH.Util.CoreHW.Constants (builtinIds)
 import CLaSH.Util.Pretty (pprString)
 
 desugar ::

@@ -25,13 +25,12 @@ import qualified VarSet
 
 -- Internal Modules
 import CLaSH.Driver.Types        (DriverSession, drUniqSupply)
-import CLaSH.Netlist.Constants   (builtinIds)
 import CLaSH.Netlist.Types       (NetlistState)
 import CLaSH.Normalize.Strategy
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util                (curLoc, makeCachedT2)
-import CLaSH.Util.CoreHW         (Var, Term, varString, startContext, tsTransformCounter, tsUniqSupply, emptyTransformState, TypedThing(..), termSomeFreeVars)
+import CLaSH.Util.CoreHW         (Var, Term, varString, startContext, tsTransformCounter, tsUniqSupply, emptyTransformState, TypedThing(..), termSomeFreeVars, builtinIds)
 import CLaSH.Util.Pretty         (pprString)
 
 -- | Normalize a bndr, errors when unsuccesfull

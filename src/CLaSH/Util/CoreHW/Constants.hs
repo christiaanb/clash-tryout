@@ -1,12 +1,26 @@
 module CLaSH.Util.CoreHW.Constants
   ( builtinIds
+  , builtinDicts
+  , builtinDFuns
+  , builtinDataCons
+  , builtinFuns
   )
 where
 
 builtinIds :: [String]
-builtinIds = ["xorB","andB","notB","orB","delay","unpackCString#","I#",
-  "+>>","vlast","Int#", "singleton", "empty",
-  "+>","smallInteger","eqUnsigned","neqUnsigned","plusUnsigned",
-  "minUnsigned", "timesUnsigned", "negateUnsigned", "unsignedFromInteger",
-  "absUnsigned", "signumUnsigned", "$dPositiveT","$fShowUnsigned","$fEqInteger"]
+builtinIds = concat [builtinDicts,builtinDFuns,builtinDataCons,builtinFuns]
 
+builtinDicts :: [String]
+builtinDicts = ["$dPositiveT","$dNaturalT","$dIntegerT"]
+
+builtinDFuns :: [String]
+builtinDFuns = ["$fShowUnsigned","$fEqInteger", "$fPositiveTx","$fNaturalTx","$fArrowComponent"]
+
+builtinDataCons :: [String]
+builtinDataCons = ["I#","Int#"]
+
+builtinFuns :: [String]
+builtinFuns = ["xorB","andB","notB","orB","delay","unpackCString#",
+  "+>>","vlast", "singleton", "empty", "+>","smallInteger","eqUnsigned",
+  "neqUnsigned","plusUnsigned", "minUnsigned", "timesUnsigned",
+  "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned"]

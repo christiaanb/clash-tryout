@@ -30,6 +30,7 @@ module CLaSH.Normalize.Transformations
   , caseRemove
   , appSimpl
   , inlineUntranslatable
+  , primSpec
   )
 where
 
@@ -57,12 +58,11 @@ import qualified Var
 import qualified VarSet
 
 -- Internal Modules
-import CLaSH.Netlist.Constants        (builtinIds)
 import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, partitionM, secondM, second)
-import CLaSH.Util.CoreHW (CoreContext(..), Term(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon)
+import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun)
 import CLaSH.Util.Pretty (pprString)
 
 iotaReduce :: NormalizeStep
@@ -373,16 +373,35 @@ caseRemove _ _ = fail "caseRemove"
 appSimpl :: NormalizeStep
 appSimpl ctx e@(App appf arg)
   | (f, _) <- collectArgs appf
-  , isVar f || isCon f = do
-  localVar <- liftQ $ isLocalVar arg
-  untranslatable <- liftQ $ isUntranslatable arg
-  case localVar || untranslatable of
-    True  -> fail "appSimpl"
-    False -> do
-      argId <- liftQ $ mkBinderFor "arg" arg
-      changed "appSimpl" e (LetRec [(argId,arg)] (App f (Var argId)))
+  , isVar f || isCon f || isPrimCon f || isPrimFun f = do
+    localVar <- liftQ $ isLocalVar arg
+    untranslatable <- liftQ $ isUntranslatable arg
+    case localVar || untranslatable of
+      True  -> fail "appSimpl"
+      False -> do
+        argId <- liftQ $ mkBinderFor "arg" arg
+        changed "appSimpl" e (LetRec [(argId,arg)] (App appf (Var argId)))
 
 appSimpl _ _ = fail "appSimpl"
 
 inlineUntranslatable :: NormalizeStep
 inlineUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
+
+primSpec :: NormalizeStep
+primSpec ctx e@(App e1 (Prim prim))
+  | (Var f, args) <- collectArgs e1
+  = do
+    case prim of
+      PrimFun _ -> fail "primSpec"
+      PrimCon _ -> fail "primSpel"
+      _ -> do
+        bodyMaybe <- liftQ $ getGlobalExpr f
+        case bodyMaybe of
+          Just body -> do
+            let newBody = mkApps body [Left (Prim prim)]
+            newf <- liftQ $ mkFunction f newBody
+            let newExpr = mkApps (Var newf) args
+            changed "primSpec" e newExpr
+          Nothing -> fail "primSpec"
+
+primSpec _ _ = fail "primSpec"

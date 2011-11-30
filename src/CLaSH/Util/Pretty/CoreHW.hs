@@ -31,6 +31,14 @@ instance Outputable Term where
     Case e _ alts -> pprPrecCase prec e (map (second id) alts)
     LetRec xes e  -> pprPrecLetRec prec (map (second id) xes) e
 
+instance Outputable Prim where
+  pprPrec prec p = case p of
+    PrimFun  x -> pprPrec prec x
+    PrimCon  x -> pprPrec prec x
+    PrimDict x -> pprPrec prec x
+    PrimDFun x -> pprPrec prec x
+    PrimCo   x -> pprPrec prec x
+
 instance Outputable AltCon where
     pprPrec prec altcon = case altcon of
         DataAlt dc xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) xs)

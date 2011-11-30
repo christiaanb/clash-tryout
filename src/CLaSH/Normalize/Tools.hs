@@ -83,7 +83,11 @@ isUntranslatable ::
   -> NormalizeSession Bool
 isUntranslatable tyThing = case getType tyThing of
   Nothing -> return True
-  Just ty -> (liftErrorState nsNetlistState $ hasUntranslatableType ty) `Error.catchError` (\(msg :: String) -> return True)
+  Just ty -> do
+    unrepr <- fmap not $ (liftErrorState nsNetlistState $ isReprType ty) `Error.catchError` (\(msg :: String) -> return False)
+    untran <- (liftErrorState nsNetlistState $ hasUntranslatableType ty) `Error.catchError` (\(msg :: String) -> return True)
+    return (unrepr || untran)
+
 
 assertRepr ::
   (TypedThing t)
