@@ -6,6 +6,7 @@ module CLaSH.Desugar.Transformations
   , firstDesugar
   , componentDesugar
   , loopDesugar
+  , usedComponentDesugar
   )
 where
 
@@ -13,7 +14,7 @@ where
 import qualified Control.Monad as Monad
 import Control.Monad.Trans (lift)
 import Language.KURE (liftQ)
-  
+
 -- GHC API
 import CoreSyn (Expr(..),Bind(..))
 import qualified CoreSyn
@@ -25,6 +26,7 @@ import qualified Type
 import qualified TysWiredIn
 
 -- Internal Modules
+import {-# SOURCE #-} CLaSH.Desugar
 import CLaSH.Desugar.Tools
 import CLaSH.Desugar.Types
 import CLaSH.Driver.Tools (getGlobalExpr)
@@ -35,7 +37,7 @@ import CLaSH.Util.Pretty (pprString)
 inlineArrowBndr :: DesugarStep
 inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
   inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
-    
+
 inlineArrowBndr c expr = fail "inlineArrowHooks"
 
 arrDesugar :: DesugarStep
@@ -48,7 +50,7 @@ arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
   let resExpr                       = MkCore.mkCoreLams [arrTV,arrowDictId,bTV,cTV,fId] (Var fId)
   changed "arrDesugar" resExpr
-  
+
 arrDesugar ctx expr = fail "arrowArrDesugar"
 
 returnADesugar :: DesugarStep
@@ -76,8 +78,8 @@ hooksDesugar ctx expr@(Var hooks) | (Name.getOccString hooks) == ">>>" = do
   let letBndrs                      = Rec [ (conId, App (Var fId) (Var inpId))
                                           , (outpId, App (Var gId) (Var conId))
                                           ]
-  let resExpr                      = MkCore.mkCoreLams 
-                                      [arrTV,arrowDictId,aTV,bTV,cTV,fId,gId,inpId] 
+  let resExpr                      = MkCore.mkCoreLams
+                                      [arrTV,arrowDictId,aTV,bTV,cTV,fId,gId,inpId]
                                       (MkCore.mkCoreLet letBndrs (Var outpId))
   changed "hooksDesugar" resExpr
 
@@ -105,8 +107,8 @@ firstDesugar ctx expr@(Var first) | (Name.getOccString first) == "first" = do
                                           , (cId, App (Var fId) (Var bId))
                                           , (outpId, MkCore.mkCoreTup [Var cId, Var dId])
                                           ]
-  let resExpr                       = MkCore.mkCoreLams 
-                                        [arrTV,arrowDictId,bTV,cTV,dTV,fId,inpId] 
+  let resExpr                       = MkCore.mkCoreLams
+                                        [arrTV,arrowDictId,bTV,cTV,dTV,fId,inpId]
                                         (MkCore.mkCoreLet letBndrs (Var outpId))
   changed "firstDesugar" resExpr
 
@@ -131,8 +133,8 @@ componentDesugar ctx expr@(Var component) | (Name.getOccString component) == "co
                                         , (outputId, unpackOutput)
                                         , (stateInId, MkCore.mkCoreApps (Var delayFunc) [Type sTy, Var initSId, Var clockId, Var stateOutId] )
                                         ]
-  let resExpr                     = MkCore.mkCoreLams 
-                                      [sTV,iTV,oTV,fId,initSId,clockId,inputId] 
+  let resExpr                     = MkCore.mkCoreLams
+                                      [sTV,iTV,oTV,fId,initSId,clockId,inputId]
                                       (MkCore.mkCoreLet letBndrs (Var outputId))
   changed "componentDesugar" resExpr
 
@@ -155,11 +157,27 @@ loopDesugar ctx expr@(Var loop) | Name.getOccString loop == "loop" = do
   let letBndrs                      = Rec [ (finpId, MkCore.mkCoreTup [Var bId, Var dId])
                                           , (foutId, MkCore.mkCoreApp (Var fId) (Var finpId))
                                           , (cId   , unpackC)
-                                          , (dId   , unpackD)                                          
+                                          , (dId   , unpackD)
                                           ]
-  let resExpr                       = MkCore.mkCoreLams 
-                                        [arrTV,arrowDictId,bTV,dTV,cTV,fId,bId] 
+  let resExpr                       = MkCore.mkCoreLams
+                                        [arrTV,arrowDictId,bTV,dTV,cTV,fId,bId]
                                         (MkCore.mkCoreLet letBndrs (Var cId))
   changed "loopDesugar" resExpr
 
 loopDesugar ctx expr = fail "arrowLoopDesugar"
+
+usedComponentDesugar :: DesugarStep
+usedComponentDesugar ctx expr@(App _ _)
+  | (Var f, args) <- CoreSyn.collectArgs expr
+  , isArrowExpression expr
+  , (Name.getOccString f) /= "component"
+  = do
+    bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr dsBindings f
+    case bodyMaybe of
+      Nothing -> fail "usedComponentDesugar"
+      Just body -> do
+        ((newBndr,_):_) <- liftQ $ desugar' [f]
+        let newExpr = MkCore.mkCoreApps (Var newBndr) args
+        changed "usedComponentDesugar" newExpr
+
+usedComponentDesugar _ _ = fail "usedComponentDesugar"

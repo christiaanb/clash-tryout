@@ -1,5 +1,6 @@
 module CLaSH.Desugar
   ( desugar
+  , desugar'
   )
 where
 
@@ -74,11 +75,9 @@ desugar' (bndr:bndrs) = do
                                (nameToString $ Var.varName v) `notElem` builtinIds)
                         desugaredExpr
       desugaredUsed <- desugar' usedBndrs
-      let desugaredUsedTys = map (getTypeFail . snd) $ filter ((`elem` usedBndrs) . fst) desugaredUsed
-      let usedBndrs' = zipWith Var.setVarType usedBndrs desugaredUsedTys
-      let desugaredExpr' = foldl doSubstitute desugaredExpr $ zip usedBndrs (map CoreSyn.Var usedBndrs')
-      desugaredOthers <- desugar' bndrs
-      return ((bndr,desugaredExpr'):(desugaredUsed ++ desugaredOthers))
+      let bndr'            = Var.setVarType bndr (getTypeFail desugaredExpr)
+      desugaredOthers      <- desugar' bndrs
+      return ((bndr',desugaredExpr):(desugaredUsed ++ desugaredOthers))
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."
 
 desugar' [] = return []
@@ -93,7 +92,3 @@ desugarExpr bndrString expr = do
     Right (expr',_,_) -> return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
   return expr'
-
-doSubstitute expr (find, repl) = CoreSubst.substExpr (Outputable.text "substitute") subst expr
-  where
-    subst = CoreSubst.extendSubst CoreSubst.emptySubst find repl
