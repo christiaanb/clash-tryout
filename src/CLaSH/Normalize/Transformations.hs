@@ -105,20 +105,20 @@ caseCon :: NormalizeStep
 caseCon ctx e@(Case scrut ty alts) | (Data dc, args) <- collectExprArgs scrut = do
   let (altcon,res) = case List.find
                             (\(altcon', _) -> case altcon' of
-                              DataAlt dc' _ -> dc == dc'
+                              DataAlt dc' _ -> DataCon.dataConTag dc == DataCon.dataConTag dc'
                               _             -> False
                             ) alts of
                        Just alt -> alt
                        Nothing  -> head alts
   case altcon of
     DefaultAlt -> changed "caseCon" e res
-    DataAlt dc' xs' | dc == dc' -> do
+    DataAlt dc' xs' | DataCon.dataConTag dc == DataCon.dataConTag dc' -> do
       let fvs            = VarSet.varSetElems $ termSomeFreeVars (`elem` xs') res
       let (binds,others) = List.partition ((`elem` fvs) . fst) $ zip xs' args
       case binds of
         [] -> changed "caseCon" e res
         _  -> changed "caseCon" e $ LetRec binds res
-    _ -> liftQ $ Error.throwError $ $(curLoc) ++ "Invalid core, datacon not found in alternative and DEFAULT not first?" ++ pprString e
+    _ -> liftQ $ Error.throwError $ $(curLoc) ++ "Invalid core, datacon not found in alternative and DEFAULT not first? " ++ pprString e
 
 caseCon _ _ = fail "caseCon"
 
