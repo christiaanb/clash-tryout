@@ -31,7 +31,7 @@ import CLaSH.Driver.Types (DriverSession)
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral)
+import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -300,8 +300,8 @@ builtinBuilders =
   , ("orB"                , (2, genBinaryOperator "orB"  Or ))
   , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
   , ("delay"              , (3, genDelay))
-  , ("plusUnsigned"       , (2, genBinaryOperatorSLV "(+)" Plus))
-  , ("minUnsigned"        , (2, genBinaryOperatorSLV "(-)" Minus))
+  , ("plusUnsigned"       , (3, \d args -> genBinaryOperatorSLV "(+)" Plus  d (tail args)))
+  , ("minUnsigned"        , (3, \d args -> genBinaryOperatorSLV "(-)" Minus d (tail args)))
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("+>>"                , (6, genShiftIntoL))
   , ("vlast"              , (2, genVLast))
@@ -328,9 +328,10 @@ parseClock ::
 parseClock clock = do
   case clock of
     (App _ _) -> do
-      let appd = collectExprArgs clock
       let (Data clockDataCon, [clockNameCString,_]) = collectExprArgs clock
-      let (Prim (PrimFun unpackCString), [Literal (Literal.MachStr clockFS)]) = collectExprArgs clockNameCString
+      clockFS <- case (filterLiterals clockNameCString) of
+            [(Literal.MachStr fs)] -> return fs
+            _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
       let clockName = FastString.unpackFS clockFS
       case (Name.getOccString clockDataCon) of
         "ClockUp"   -> return (clockName,PosEdge)

@@ -32,6 +32,7 @@ module CLaSH.Util.CoreHW.Tools
   , isPrimCon
   , isPrimFun
   , getIntegerLiteral
+  , filterLiterals
   )
 where
 
@@ -332,6 +333,19 @@ getIntegerLiteral tfpSynLens expr@(App _ _) =
     --  | getFullString f == "Types.Data.Num.Ops.fromIntegerT" -> do
     --    fromTfpInt tfpSynLens decTy
 getIntegerLiteral _ e = Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString e
+
+filterLiterals ::
+  Term
+  -> [Literal]
+filterLiterals e = case e of
+  Literal l     -> [l]
+  TyLambda _ b  -> filterLiterals b
+  Lambda _ b    -> filterLiterals b
+  TyApp e1 _    -> filterLiterals e1
+  App e1 e2     -> concat [filterLiterals e1, filterLiterals e2]
+  Case s _ alts -> concat [filterLiterals s, concatMap (filterLiterals . snd) alts]
+  LetRec l b    -> concat [concatMap (filterLiterals . snd) l, filterLiterals b]
+  _             -> []
 
 fromTfpInt ::
   (Error.MonadError String m, State.MonadState s m, Functor m)
