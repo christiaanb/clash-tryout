@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 module CLaSH.Desugar.Transformations
   ( inlineArrowBndr
   , arrDesugar
@@ -33,6 +34,9 @@ import CLaSH.Driver.Tools (getGlobalExpr)
 import CLaSH.Util.Core (mkInternalVar,TypedThing(..))
 import CLaSH.Util.Core.Transform (changed, regenUniques, inlineBind)
 import CLaSH.Util.Pretty (pprString)
+
+builtinArrowFuns :: [String]
+builtinArrowFuns = ["arr","returnA",">>>","first","component","loop"]
 
 inlineArrowBndr :: DesugarStep
 inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
@@ -170,13 +174,13 @@ usedComponentDesugar :: DesugarStep
 usedComponentDesugar ctx expr@(App _ _)
   | (Var f, args) <- CoreSyn.collectArgs expr
   , isArrowExpression expr
-  , (Name.getOccString f) /= "component"
+  , (Name.getOccString f) `notElem` builtinArrowFuns
   = do
     bodyMaybe <- liftQ $ (lift . lift) $ getGlobalExpr dsBindings f
     case bodyMaybe of
       Nothing -> fail "usedComponentDesugar"
       Just body -> do
-        ((newBndr,_):_) <- liftQ $ desugar' [f]
+        (newBndr,_) <- liftQ $ desugar' f
         let newExpr = MkCore.mkCoreApps (Var newBndr) args
         changed "usedComponentDesugar" newExpr
 

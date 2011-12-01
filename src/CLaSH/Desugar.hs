@@ -45,42 +45,28 @@ desugar globals bndr = do
   ((retVal,tState),dState) <- State.liftIO $
       State.runStateT
         (State.runStateT
-          (Error.runErrorT (desugar' [bndr]))
+          (Error.runErrorT (desugar' bndr))
           (emptyTransformState uniqSupply))
         (emptyDesugarState globals)
   case retVal of
     Left  errMsg -> error errMsg
-    Right desugared -> do
-      let uniqSupply' = Label.get tsUniqSupply tState
+    Right _ -> do
+      let uniqSupply'     = Label.get tsUniqSupply tState
       let transformations = Label.get tsTransformCounter tState
       LabelM.puts drUniqSupply uniqSupply'
-      return $ trace ("Desugar transformations: " ++ show transformations) $ (Map.fromList desugared) `Map.union` globals
+      return $ trace ("Desugar transformations: " ++ show transformations) $ (Label.get dsDesugared dState) `Map.union` globals
 
 desugar' ::
-  [CoreSyn.CoreBndr]
-  -> DesugarSession [(CoreSyn.CoreBndr,CoreSyn.CoreExpr)]
-desugar' (bndr:bndrs) = do
+  CoreSyn.CoreBndr
+  -> DesugarSession (CoreSyn.CoreBndr,CoreSyn.CoreExpr)
+desugar' bndr = do
   exprMaybe <- (lift . lift) $ getGlobalExpr dsBindings bndr
   case exprMaybe of
     Just expr -> do
       desugaredExpr <- makeCachedT2 bndr dsDesugared $ desugarExpr (show bndr) expr
-      let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars
-                        (\v -> (Var.isId v) &&
-                               (not $ Id.isDictId v) &&
-                               (not $ Id.isDataConWorkId v) &&
-                               (Id.isClassOpId_maybe v == Nothing) &&
-                               (not $ Id.isDFunId v) &&
-                               (not $ Id.isEvVar v) &&
-                               (Id.isDataConId_maybe v == Nothing) &&
-                               (nameToString $ Var.varName v) `notElem` builtinIds)
-                        desugaredExpr
-      desugaredUsed <- desugar' usedBndrs
-      let bndr'            = Var.setVarType bndr (getTypeFail desugaredExpr)
-      desugaredOthers      <- desugar' bndrs
-      return ((bndr',desugaredExpr):(desugaredUsed ++ desugaredOthers))
+      let bndr'     = Var.setVarType bndr (getTypeFail desugaredExpr)
+      return (bndr',desugaredExpr)
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++ show bndr ++ " is not found."
-
-desugar' [] = return []
 
 desugarExpr ::
   String
