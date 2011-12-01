@@ -3,6 +3,7 @@ module CLaSH.CoreHW
 where
 
 -- External Modules
+import qualified Control.Monad              as Monad
 import qualified Control.Monad.Error        as Error
 import qualified Control.Monad.Identity     as Identity
 import qualified Control.Monad.State.Strict as State
@@ -14,6 +15,7 @@ import qualified Data.Map                   as Map
 import qualified Data.Maybe                 as Maybe
 
 -- GHC API
+import qualified CoreFVs
 import qualified CoreSyn
 import qualified Id
 import qualified Var
@@ -56,28 +58,30 @@ coreToCoreHW globals bndr = do
 coreToCoreHW' ::
   [CoreSyn.CoreBndr]
   -> CoreHWSession [(Var, Term)]
-coreToCoreHW' [] = return []
+coreToCoreHW' []           = return []
 coreToCoreHW' (bndr:bndrs) = do
   exprMaybe <- getGlobalExpr chwBindings bndr
   case exprMaybe of
     Just expr -> do
-      term <- makeCached bndr chwTranslated $ coreToCoreHW'' expr
+      unlocatable       <- unlocatableFVs expr
+      term              <- makeCached bndr chwTranslated $ coreToCoreHW'' unlocatable expr
       let usedFreeBndrs = VarSet.varSetElems $ VarSet.filterVarSet
                             (\v -> (Var.isId v) &&
                                    (Id.isClassOpId_maybe v == Nothing) &&
                                    (varString v) `notElem` builtinIds)
                             (termFreeVars term)
-      translatedUsed <- coreToCoreHW' usedFreeBndrs
-      translatedOthers <- coreToCoreHW' bndrs
+      translatedUsed    <- coreToCoreHW' usedFreeBndrs
+      translatedOthers  <- coreToCoreHW' bndrs
       return ((bndr,term):(translatedUsed ++ translatedOthers))
     Nothing -> fail $ $(curLoc) ++ "Expr belonging to binder: " ++ varStringUniq bndr ++ " is not found."
 
 coreToCoreHW'' ::
-  CoreSyn.CoreExpr
+  [Var]
+  -> CoreSyn.CoreExpr
   -> CoreHWSession Term
-coreToCoreHW'' expr = do
-  us <- LabelM.gets chwUniqSupply
-  let term = coreExprToTerm expr
+coreToCoreHW'' unlocatable expr = do
+  us                  <- LabelM.gets chwUniqSupply
+  let term            = coreExprToTerm unlocatable expr
   let (retVal,tState) = Identity.runIdentity $
         State.runStateT
           (Error.runErrorT (regenUniques term))
@@ -86,3 +90,23 @@ coreToCoreHW'' expr = do
   case retVal of
     Left errMsg -> fail errMsg
     Right term' -> return term'
+
+unlocatableFVs ::
+  CoreSyn.CoreExpr
+  -> CoreHWSession [Var]
+unlocatableFVs e = do
+  let usedBndrs = VarSet.varSetElems $ CoreFVs.exprSomeFreeVars
+                    (\v -> Var.isGlobalId v &&
+                           (Id.isClassOpId_maybe v == Nothing) &&
+                           (not $ Id.isDataConWorkId v) &&
+                           varString v `notElem` builtinIds
+                    ) e
+  unlocatable   <- Monad.filterM
+                     (\b -> do
+                       eMaybe <- getGlobalExpr chwBindings b
+                       case eMaybe of
+                         Nothing -> return True
+                         _       -> return False
+                     ) usedBndrs
+
+  return unlocatable

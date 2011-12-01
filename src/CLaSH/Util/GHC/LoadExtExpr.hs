@@ -28,10 +28,13 @@ import qualified UniqFM
 import qualified UniqSupply
 import qualified Var
 
+silentLogger :: DynFlags.LogAction
+silentLogger _ _ _ _ = return ()
+
 loadExtExpr :: GHC.Name -> IO (Maybe CoreSyn.CoreExpr)
 loadExtExpr name = do
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'p'
-  GHC.defaultErrorHandler DynFlags.defaultLogAction $ do
+  GHC.defaultErrorHandler silentLogger $ do
     GHC.runGhc (Just GHC.Paths.libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags

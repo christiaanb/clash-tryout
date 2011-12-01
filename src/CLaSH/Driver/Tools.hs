@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module CLaSH.Driver.Tools
   ( isTopEntity
   , getGlobalExpr
@@ -7,12 +8,14 @@ module CLaSH.Driver.Tools
 where
 
 -- External Modules
+import Control.Exception (SomeException,catch)
 import qualified Control.Monad.Error as Error
 import qualified Control.Monad.State as State
 import Data.Label ((:->))
 import qualified Data.Label.PureM as Label
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Prelude hiding (catch)
 
 -- GHC API
 import qualified CoreSyn
@@ -55,7 +58,7 @@ getExternalExpr ::
 getExternalExpr globalsLens bndr = do
   if (not $ Var.isLocalVar bndr)
     then do
-      exprMaybe <- Error.liftIO $ loadExtExpr (Var.varName bndr)
+      exprMaybe <- Error.liftIO $ (loadExtExpr (Var.varName bndr)) `catch` (\(e :: SomeException) -> return Nothing)
       case exprMaybe of
         (Just expr) -> do
           addGlobalBind globalsLens bndr expr
