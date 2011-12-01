@@ -69,25 +69,28 @@ normalize' nonRepr (bndr:bndrs) = do
   case exprMaybe of
     Just expr -> do
       normalizable <- (assertNormalizable nonRepr expr) `Error.catchError`
-        ( \e -> do Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++
-                    show bndr ++ " is not normalizable (" ++
-                    show (getTypeFail expr) ++ "):\n" ++ e ++ "\n" ++ pprString expr
+        (\e -> trace ( "\n=Warning=:\n" ++ $(curLoc) ++ "Expr belonging to binder '" ++ show bndr ++
+                       "', having type:\n\n" ++ show (getTypeFail expr) ++
+                       "\n\nis not normalizable, because:\n" ++ e ++ "\n"
+                     ) $ return False
         )
-      normalizedExpr <- makeCachedT2 bndr nsNormalized $
-        normalizeExpr (show bndr) expr
-      let usedBndrs = VarSet.varSetElems $ termSomeFreeVars
-                        (\v -> (Var.isId v) &&
-                               (not $ Id.isDictId v) &&
-                               (not $ Id.isDFunId v) &&
-                               (not $ Id.isEvVar v) &&
-                               (not $ Id.isDataConWorkId v) &&
-                               (Id.isClassOpId_maybe v == Nothing) &&
-                               (Id.isDataConId_maybe v == Nothing) &&
-                               (varString v) `notElem` builtinIds &&
-                               (varString v) `notElem` builtinDicts)
-                        normalizedExpr
-      normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
-      return ((bndr,normalizedExpr):normalizedOthers)
+      if normalizable then do
+          normalizedExpr <- makeCachedT2 bndr nsNormalized $
+            normalizeExpr (show bndr) expr
+          let usedBndrs = VarSet.varSetElems $ termSomeFreeVars
+                            (\v -> (Var.isId v) &&
+                                   (not $ Id.isDictId v) &&
+                                   (not $ Id.isDFunId v) &&
+                                   (not $ Id.isEvVar v) &&
+                                   (not $ Id.isDataConWorkId v) &&
+                                   (Id.isClassOpId_maybe v == Nothing) &&
+                                   (Id.isDataConId_maybe v == Nothing) &&
+                                   (varString v) `notElem` builtinIds)
+                            normalizedExpr
+          normalizedOthers <- normalize' nonRepr (usedBndrs ++ bndrs)
+          return ((bndr,normalizedExpr):normalizedOthers)
+        else
+          normalize' nonRepr bndrs
     Nothing -> Error.throwError $ $(curLoc) ++ "Expr belonging to binder: " ++
                 show bndr ++ " is not found.: " ++ pprString globalBindings
 
@@ -97,12 +100,12 @@ normalizeExpr ::
   String
   -> Term
   -> NormalizeSession Term
-normalizeExpr bndrName expr = trace ("\nnormalizing: " ++ bndrName ++ "\n" ++ pprString expr) $ do
+normalizeExpr bndrName expr = trace ("normalizing: " ++ bndrName) $  do
   rewritten <- runRewrite normalizeStrategy startContext expr
   expr' <- case rewritten of
     Right (expr',_,_) -> return expr'
     Left errMsg       -> Error.throwError $ $(curLoc) ++ errMsg
-  trace ("\nafter normalizations:\n" ++ pprString expr') $ return expr'
+  return expr'
 
 -- | Normalize a binder (returns Nothing apon failure)
 normalizeMaybe ::
@@ -117,6 +120,3 @@ normalizeMaybe nonRepr bndr = do
   case normBinds of
     []           -> return Nothing
     (normBind:_) -> return (Just normBind)
-
-builtinDicts :: [String]
-builtinDicts = ["$dPositiveT","$fShowUnsigned","$fEqInteger"]
