@@ -388,8 +388,9 @@ inlineUntranslatable :: NormalizeStep
 inlineUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
 
 primSpec :: NormalizeStep
-primSpec ctx e@(App e1 (Prim prim))
-  | (Var f, args) <- collectArgs e1
+primSpec ctx e@(App e1 e2)
+  | (Var f, args)  <- collectArgs e1
+  , (Prim prim, _) <- collectArgs e2
   = do
     case prim of
       PrimFun _ -> fail "primSpec"
