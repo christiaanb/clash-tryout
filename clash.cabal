@@ -14,7 +14,8 @@ Build-type:          Simple
 Cabal-version:       >=1.2
 
 Library
-  Exposed-modules:     CLaSH, CLaSH.Builtin,
+  Exposed-modules:     CLaSH,
+                       CLaSH.Builtin,
                        Data.Sized.Index,
                        Data.Sized.Signed,
                        Data.Sized.Unsigned,
@@ -23,6 +24,7 @@ Library
   HS-Source-Dirs:      src
 
   extensions:          TemplateHaskell
+  ghc-options:         -O2
 
   Build-depends:       base             >= 4.4.0.0 && < 4.5,
                        containers       >= 0.4.1.0 && < 0.5,
@@ -49,7 +51,6 @@ Library
                        CLaSH.Driver.Tools,
                        CLaSH.Driver.Types,
                        CLaSH.Netlist,
-                       CLaSH.Netlist.Constants,
                        CLaSH.Netlist.GenVHDL,
                        CLaSH.Netlist.Tools,
                        CLaSH.Netlist.Types,
@@ -65,6 +66,7 @@ Library
                        CLaSH.Util.Core.Transform,
                        CLaSH.Util.Core.Traverse,
                        CLaSH.Util.Core.Types,
+                       CLaSH.Util.CoreHW.Constants,
                        CLaSH.Util.CoreHW.CoreToCoreHW,
                        CLaSH.Util.CoreHW.FreeVars,
                        CLaSH.Util.CoreHW.Syntax,
