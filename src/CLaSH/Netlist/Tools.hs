@@ -117,7 +117,7 @@ mkAdtHWType ::
   -> [Type.Type]
   -> NetlistSession HWType
 mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
-    [] -> Error.throwError ($(curLoc) ++ "Only custom adt's are supported: " ++ pprString tyCon ++ pprString args)
+    [] -> Error.throwError ($(curLoc) ++ "There are no known DataCons for type: " ++ pprString tyCon ++ " " ++ (case args of [] -> ""; _ -> pprString args))
     dcs -> do
       let argTyss = map DataCon.dataConRepArgTys dcs
       let sumTy   = SumType name $ map (nameString . DataCon.dataConName) dcs

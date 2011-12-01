@@ -100,7 +100,7 @@ mkConcSm (bndr, app@(App _ _)) = do
     Prim (PrimFun f) -> case (List.lookup (varString f) builtinBuilders) of
       Just (argCount, builder) -> if length args == argCount
           then builder bndr args
-          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ " actual:" ++ show (length args) ++"): " ++ pprString (bndr,app,args)
+          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
       Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive that is not a known builtin: " ++ pprString (bndr,app)
     _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
