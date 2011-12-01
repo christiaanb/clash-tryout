@@ -1,9 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DatatypeContexts #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE DatatypeContexts          #-}
 
 module Data.Sized.Vector
   ( Vector

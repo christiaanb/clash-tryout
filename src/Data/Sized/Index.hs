@@ -1,5 +1,10 @@
-{-# LANGUAGE  TypeFamilies, TypeOperators, ScopedTypeVariables, FlexibleInstances, Rank2Types, FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE FlexibleContexts    #-}
+
 module Data.Sized.Index
   ( Index
   , fromNaturalT
@@ -8,7 +13,7 @@ module Data.Sized.Index
   ) where
 
 import Language.Haskell.TH
-import Language.Haskell.TH.Syntax (Lift(..))    
+import Language.Haskell.TH.Syntax (Lift(..))
 import qualified Data.Bits as B
 import Types
 import Types.Data.Num.Decimal.Literals.TH
@@ -38,18 +43,18 @@ rangeT _ = undefined
 instance PositiveT nT => Eq (Index nT) where
     (Index x) == (Index y) = x == y
     (Index x) /= (Index y) = x /= y
-    
+
 instance PositiveT nT => Show (Index nT) where
     showsPrec prec n =
         showsPrec prec $ toInteger n
- 
+
 instance PositiveT nT => Ord (Index nT) where
-    a `compare` b = toInteger a `compare` toInteger b 
-        
+    a `compare` b = toInteger a `compare` toInteger b
+
 instance PositiveT nT => Bounded (Index nT) where
     minBound = 0
     maxBound = Index $ (fromIntegerT (undefined :: nT)) - 1
-        
+
 instance PositiveT nT => Enum (Index nT) where
     succ x
        | x == maxBound  = error $ "Enum.succ{Index " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `succ' of maxBound"
@@ -57,7 +62,7 @@ instance PositiveT nT => Enum (Index nT) where
     pred x
        | x == minBound  = error $ "Enum.succ{Index " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `pred' of minBound"
        | otherwise      = x - 1
-    
+
     fromEnum (Index x)
         | x > toInteger (maxBound :: Int) =
             error $ "Enum.fromEnum{Index " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `fromEnum' on Index greater than maxBound :: Int"
@@ -72,12 +77,12 @@ instance PositiveT nT => Enum (Index nT) where
             error $ "Enum.fromEnum{Index " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `fromEnum' on Index smaller than minBound :: Index " ++ show (fromIntegerT (undefined :: nT))
         | otherwise =
             fromInteger $ toInteger x
-    
+
 instance PositiveT nT => Num (Index nT) where
     (Index a) + (Index b) =
         fromInteger $ a + b
     (Index a) * (Index b) =
-        fromInteger $ a * b 
+        fromInteger $ a * b
     (Index a) - (Index b) =
         fromInteger $ a - b
     fromInteger n

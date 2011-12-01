@@ -1,6 +1,5 @@
 {-# LANGUAGE Arrows #-}
-{-# LANGUAGE TemplateHaskell #-}
-module CLaSH.Builtin 
+module CLaSH.Builtin
   ( module Control.Arrow
   , module Control.Monad.Fix
   , module Data.Sized.Integer
@@ -10,13 +9,13 @@ module CLaSH.Builtin
   , module Data.Sized.Signed
   , module Language.Haskell.TH.Lift
   , module Types
-  
+
   , Bit (..)
   , andB
   , orB
   , xorB
   , notB
-  
+
   , Clock(..)
   , Component
   , component
@@ -40,12 +39,12 @@ import Data.Sized.Integer(HWBits(..))
 import Data.Sized.Signed
 import Data.Sized.Unsigned
 import Data.Sized.Vector
-  
+
 data Bit = H | L
   deriving (Eq,Show)
-  
+
 deriveLift ''Bit
-  
+
 H `andB` H = H
 _ `andB` _ = L
 
@@ -62,7 +61,7 @@ notB H = L
 data Clock = ClockUp String Int | ClockDown String Int
   deriving (Eq,Ord,Show)
 
-data Component i o = C 
+data Component i o = C
   { domain :: Set.Set Clock
   , exec   :: Clock -> i -> (o, Component i o)
   }
@@ -93,8 +92,8 @@ component f initS clk = C { domain = Set.singleton clk
                           , exec = \clk' i -> let (s,o)            = f initS i
                                                   s' | clk == clk' = s
                                                      | otherwise   = initS
-                                              in (o, component f s' clk)                                              
+                                              in (o, component f s' clk)
                           }
-
+{-# INLINE (^^^) #-}
 (^^^) :: (s -> i -> (s,o)) -> s -> Component i o
 f ^^^ initS = component f initS (ClockUp "defaultClock" 1)

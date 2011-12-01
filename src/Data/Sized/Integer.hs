@@ -1,5 +1,6 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE DatatypeContexts #-}
+
 module Data.Sized.Integer
   ( Signed(..)
   , Unsigned(..)

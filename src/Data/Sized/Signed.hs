@@ -1,5 +1,10 @@
-{-# LANGUAGE  TypeFamilies, TypeOperators, ScopedTypeVariables, FlexibleInstances, Rank2Types, FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE FlexibleContexts    #-}
+
 module Data.Sized.Signed
   ( Signed
   , resizeSigned
@@ -70,7 +75,7 @@ instance PositiveT nT => Enum (Signed nT) where
     pred x
        | x == minBound  = error $ "Enum.succ{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `pred' of minBound"
        | otherwise      = x - 1
-    
+
     fromEnum (Signed x)
         | x > toInteger (maxBound :: Int) =
             error $ "Enum.fromEnum{Signed " ++ show (fromIntegerT (undefined :: nT)) ++ "}: tried to take `fromEnum' on Signed greater than maxBound :: Int"
@@ -96,7 +101,7 @@ instance PositiveT nT => Num (Signed nT) where
         fromInteger $ (n `B.xor` mask (undefined :: nT)) + 1
     a - b =
         a + (negate b)
-    
+
     fromInteger n
       | n > 0 =
         Signed $ n B..&. mask (undefined :: nT)
@@ -105,7 +110,7 @@ instance PositiveT nT => Num (Signed nT) where
         negate $ fromInteger $ negate n
     fromInteger _ =
         Signed 0
-    
+
     abs s
       | isNegative s =
           negate s
