@@ -52,6 +52,7 @@ netlistStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
   where
     steps = [ retLam
             , retLet
+            , retVar
             , inlineVar
             , emptyLet
             , letFlat

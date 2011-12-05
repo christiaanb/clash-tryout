@@ -21,6 +21,7 @@ module CLaSH.Normalize.Transformations
 
   , retLam
   , retLet
+  , retVar
   , inlineVar
   , emptyLet
   , letFlat
@@ -255,6 +256,13 @@ retLet ctx expr@(LetRec binds body) | all isLambdaBodyCtx ctx = do
       fail "retLet"
 
 retLet _ _ = fail "retLet"
+
+retVar :: NormalizeStep
+retVar [] e@(Lambda x (Var x')) | x == x' = do
+  resId <- liftQ $ mkBinderFor "res" (Var x')
+  changed "retVar" e $ LetRec [(resId,(Var x'))] (Var resId)
+
+retVar _ _ = fail "retVar"
 
 inlineVar :: NormalizeStep
 inlineVar = inlineBind "inlineVar" (return . isVar . snd)
