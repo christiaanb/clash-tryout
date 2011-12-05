@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE DatatypeContexts          #-}
+{-# LANGUAGE FlexibleContexts          #-}
 
 module Data.Sized.Vector
   ( Vector
@@ -53,7 +54,8 @@ where
 import Types
 import Types.Data.Num
 import Types.Data.Num.Decimal.Literals.TH
-import Data.Sized.Index
+import Data.Sized.Integer
+import Data.Sized.Unsigned
 
 import Data.Typeable
 import qualified Data.Foldable as DF
@@ -103,7 +105,7 @@ readVector = read
 vlength :: forall s a . NaturalT s => Vector s a -> Int
 vlength _ = fromIntegerT (undefined :: s)
 
-maxIndex :: forall s a . PositiveT s => Vector s a -> Index s
+maxIndex :: (PositiveT s, PositiveT (Log2 s)) => Vector s a -> Unsigned (Log2 s)
 maxIndex _ = maxBound
 
 vlengthT :: NaturalT s => Vector s a -> s
@@ -115,15 +117,15 @@ fromVector (Vector xs) = xs
 vnull :: Vector D0 a -> Bool
 vnull _ = True
 
-(!) :: PositiveT s => Vector s a -> Index s -> a
-(Vector xs) ! i = xs !! (fromInteger (toInteger i))
+(!) :: PositiveT s => Vector s a -> Unsigned (Log2 s) -> a
+(Vector xs) ! (Unsigned i) = xs !! (fromIntegral i)
 
 -- ==========================
 -- = Transforming functions =
 -- ==========================
 vreplace :: PositiveT s =>
-  Vector s a -> Index s -> a -> Vector s a
-vreplace (Vector xs) i y = Vector $ replace' xs (toInteger i) y
+  Vector s a -> Unsigned (Log2 s) -> a -> Vector s a
+vreplace (Vector xs) (Unsigned i) y = Vector $ replace' xs i y
   where replace' []     _ _ = []
         replace' (_:xs) 0 y = (y:xs)
         replace' (x:xs) n y = x : (replace' xs (n-1) y)

@@ -4,7 +4,6 @@ module CLaSH.Builtin
   , module Control.Monad.Fix
   , module Data.Sized.Integer
   , module Data.Sized.Vector
-  , module Data.Sized.Index
   , module Data.Sized.Unsigned
   , module Data.Sized.Signed
   , module Language.Haskell.TH.Lift
@@ -34,7 +33,6 @@ import qualified Prelude as P
 import Types
 
 -- Internal Modules
-import Data.Sized.Index
 import Data.Sized.Integer(HWBits(..))
 import Data.Sized.Signed
 import Data.Sized.Unsigned

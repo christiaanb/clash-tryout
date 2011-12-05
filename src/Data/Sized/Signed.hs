@@ -17,7 +17,6 @@ import Types
 import Types.Data.Num.Decimal.Literals.TH
 
 import Data.Sized.Integer
-import Data.Sized.Index ()
 
 instance PositiveT nT => Lift (Signed nT) where
   lift (Signed i) = sigE [| (Signed i) |] (decSignedT (fromIntegerT (undefined :: nT)))
@@ -180,5 +179,5 @@ instance PositiveT nT => B.Bits (Signed nT) where
 
 instance PositiveT nT => HWBits (Signed nT) where
   type ShiftSize (Signed nT) = nT
-  a `shiftL` b = a `B.shiftL` (fromInteger (toInteger b))
-  a `shiftR` b = a `B.shiftR` (fromInteger (toInteger b))
+  a `shiftL` (Unsigned b) = a `B.shiftL` (fromIntegral b)
+  a `shiftR` (Unsigned b) = a `B.shiftR` (fromIntegral b)

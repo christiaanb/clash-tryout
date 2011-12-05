@@ -4,11 +4,12 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE IncoherentInstances #-}
 
 module Data.Sized.Unsigned
     ( Unsigned
     , resizeUnsigned
-    , fromIndex
     ) where
 
 import Language.Haskell.TH
@@ -18,21 +19,12 @@ import Types
 import Types.Data.Num.Decimal.Literals.TH
 
 import Data.Sized.Integer
-import Data.Sized.Index ()
 
 instance PositiveT nT => Lift (Unsigned nT) where
   lift (Unsigned i) = sigE [| (Unsigned i) |] (decUnsignedT (fromIntegerT (undefined :: nT)))
 
 decUnsignedT :: Integer -> Q Type
 decUnsignedT n = appT (conT (''Unsigned)) (decLiteralT n)
-
-fromIndex ::
-  ( NaturalT nT
-  , NaturalT nT'
-  , ((Pow2 nT') :>: nT) ~ True
-  , Integral (Index nT)
-  ) => Index nT -> Unsigned nT'
-fromIndex index = Unsigned (toInteger index)
 
 resizeUnsigned :: (PositiveT nT, PositiveT nT') => Unsigned nT -> Unsigned nT'
 resizeUnsigned a = fromInteger (toInteger a)
@@ -250,5 +242,5 @@ instance PositiveT nT => B.Bits (Unsigned nT) where
 
 instance PositiveT nT => HWBits (Unsigned nT) where
   type ShiftSize (Unsigned nT) = nT
-  a `shiftL` b = a `B.shiftL` (fromInteger (toInteger b))
-  a `shiftR` b = a `B.shiftR` (fromInteger (toInteger b))
+  a `shiftL` (Unsigned b) = a `B.shiftL` (fromIntegral b)
+  a `shiftR` (Unsigned b) = a `B.shiftR` (fromIntegral b)
