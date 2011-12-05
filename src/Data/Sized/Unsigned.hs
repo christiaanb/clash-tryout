@@ -41,8 +41,6 @@ mask _ = B.bit (fromIntegerT (undefined :: nT)) - 1
 instance PositiveT nT => Eq (Unsigned nT) where
   (==) = eqUnsigned
   (/=) = neqUnsigned
-    --(Unsigned x) == (Unsigned y) = x == y
-    --(Unsigned x) /= (Unsigned y) = x /= y
 
 eqUnsigned ::
   PositiveT nT
@@ -59,16 +57,8 @@ neqUnsigned ::
 neqUnsigned (Unsigned x) (Unsigned y) = x /= y
 
 instance PositiveT nT => Show (Unsigned nT) where
-  showsPrec = showsPrecUnsigned
-    --showsPrec prec n =
-    --    showsPrec prec $ toInteger n
-
-showsPrecUnsigned ::
-  PositiveT nT
-  => Int
-  -> Unsigned nT
-  -> ShowS
-showsPrecUnsigned prec (Unsigned n) = showsPrec prec $ toInteger n
+  showsPrec prec n =
+      showsPrec prec $ toInteger n
 
 instance PositiveT nT => Read (Unsigned nT) where
     readsPrec prec str =
@@ -113,30 +103,6 @@ instance PositiveT nT => Num (Unsigned nT) where
   fromInteger = unsignedFromInteger
   abs         = absUnsigned
   signum      = signumUnsigned
---    (Unsigned a) + (Unsigned b) =
---        fromInteger $ a + b
---    (Unsigned a) * (Unsigned b) =
---        fromInteger $ a * b
---    negate s@(Unsigned n) =
---        fromInteger $ (n `B.xor` mask (sizeT s)) + 1
---    a - b =
---        a + (negate b)
-
---    fromInteger n
---      | n > 0 =
---        Unsigned $ n B..&. mask (undefined :: nT)
---    fromInteger n
---      | n < 0 =
---        negate $ fromInteger $ negate n
---    fromInteger _ =
---        Unsigned 0
-
---    abs s = s
---    signum s
---      | s == 0 =
---          0
---      | otherwise =
---          1
 
 plusUnsigned ::
   PositiveT nT
