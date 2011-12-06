@@ -219,14 +219,14 @@ funcLift ctx e
 
 funcLift _ _ = fail "funcLift"
 
-classopresolution c expr@(App (TyApp (Var sel) ty) (Var dict)) = do
+classopresolution c expr@(App (TyApp (Var sel) ty) dict) = do
   case (Id.isClassOpId_maybe sel) of
     Just cls -> do
       let selectorIds = Class.classAllSelIds cls
       let selIdN = List.elemIndex sel selectorIds
       case selIdN of
         Just n -> do
-          selCase <- liftQ $ mkSelCase "classopresolution" (Var dict) 0 n
+          selCase <- liftQ $ mkSelCase "classopresolution" dict 0 n
           changed "classopresolution" expr selCase
         Nothing -> fail "classopresolution"
     Nothing -> fail "classopresolution"
