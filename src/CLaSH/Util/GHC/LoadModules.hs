@@ -21,7 +21,8 @@ loadModules modName =
   GHC.defaultErrorHandler DynFlags.defaultLogAction $
     GHC.runGhc (Just GHC.Paths.libdir) $ do
       dflags <- GHC.getSessionDynFlags
-      GHC.setSessionDynFlags $ dflags {GHC.simplPhases = 0}
+      let dflags' = foldl DynFlags.xopt_set (dflags {GHC.simplPhases = 0}) [DynFlags.Opt_TemplateHaskell,DynFlags.Opt_Arrows]
+      GHC.setSessionDynFlags dflags'
       target <- GHC.guessTarget modName Nothing
       GHC.setTargets [target]
       ldRes <- GHC.load GHC.LoadAllTargets
