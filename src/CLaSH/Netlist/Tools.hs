@@ -19,9 +19,12 @@ module CLaSH.Netlist.Tools
   , mkVHDLBasicId
   , toSLV
   , fromSLV
+  , toSLVString
+  , fromSLVString
   , genBinaryOperatorSLV
   , untranslatableHType
   , hasUntranslatableType
+  , mkTempAssign
   )
 where
 
@@ -45,7 +48,7 @@ import qualified VarSet
 
 -- internal Module
 import CLaSH.Netlist.Types
-import CLaSH.Util (curLoc,makeCached)
+import CLaSH.Util (curLoc,makeCached,getAndModify)
 import CLaSH.Util.CoreHW (CoreBinding, TypedThing(..), Term(..), Var, nameString, varStringUniq, tyHasFreeTyVars,
   flattenLets, fromTfpInt, collectBndrs, dataConIndex)
 import CLaSH.Util.Pretty (pprString)
@@ -322,7 +325,21 @@ mkVHDLBasicId = (stripLeading . stripInvalid)
     stripLeading    = dropWhile (`elem` ['0'..'9'])
 
 toSLV :: HWType -> Expr -> Expr
-toSLV (UnsignedType _) = ExprFunCall "std_logic_vector" . (:[])
+toSLV t = ExprFunCall (toSLVString t) . (:[])
 
 fromSLV :: HWType -> Expr -> Expr
-fromSLV (UnsignedType _) = ExprFunCall "unsigned" . (:[])
+fromSLV t = ExprFunCall (fromSLVString t) . (:[])
+
+toSLVString :: HWType -> String
+toSLVString (VecType _ _)    = "toSLV"
+toSLVString (UnsignedType _) = "std_logic_vector"
+
+fromSLVString :: HWType -> String
+fromSLVString (VecType _ _)    = "fromSLV"
+fromSLVString (UnsignedType _) = "unsigned"
+
+mkTempAssign :: HWType -> Expr -> NetlistSession (Ident,[Decl])
+mkTempAssign hTy assignExpr = do
+  t <- getAndModify nlVarCnt (+1)
+  let dstName = "tmp" ++ (show t)
+  return (dstName, [NetDecl dstName hTy Nothing, NetAssign dstName assignExpr])

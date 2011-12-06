@@ -38,12 +38,14 @@ genNetlist ::
   NetlistState
   -> [(Var, Term)]
   -> Var
-  -> DriverSession [Module]
+  -> DriverSession ([Module], [HWType])
 genNetlist nlState normalized topEntity = do
   let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity)) (nlState { _nlNormalized = Map.fromList normalized })
   case retVal of
     Left errMsg   -> error errMsg
-    Right netlist -> return netlist
+    Right netlist -> do
+      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ _ -> True; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
+      return (netlist,elTypes)
 
 genModules ::
   Var
@@ -126,7 +128,8 @@ mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
                     ProductType _ _ -> do
                       let fieldSlice = typeFieldRange hwTypeScrut 0 selI
                       let sliceExpr = mkSliceExpr (varStringUniq scrut) fieldSlice
-                      return (comment:(mkUncondAssign (bndr,hwTypeBndr) sliceExpr),[])
+                      (tempVar, tempExpr) <- mkTempAssign (VecType (htypeSize hwTypeBndr) BitType) sliceExpr
+                      return (comment:tempExpr ++ (mkUncondAssign (bndr,hwTypeBndr) (fromSLV hwTypeBndr $ ExprVar tempVar)),[])
                     SPType _ _ -> do
                       dcI <- dataConIndex scrut dc
                       let fieldSlice = typeFieldRange hwTypeScrut dcI selI
@@ -210,13 +213,14 @@ genApplication dst f args =  do
                       argTys' <- mapM mkHType args'
                       let comment = genComment dst (pprString f) args
                       args'' <- mapM varToExpr args'
+                      let args3 = zipWith toSLV argTys' args''
                       if [dstType] == argTys'
                         then return (comment:(mkUncondAssign (dst,dstType) (head args'')),[])
                         else do
-                          case (compare (length argTys) (length args'')) of
+                          case (compare (length argTys) (length args3)) of
                             EQ -> do
                               let comment = genComment dst (pprString f) args
-                              return (comment:(mkUncondAssign (dst,dstType) (ExprConcat args'')),[])
+                              return (comment:(mkUncondAssign (dst,dstType) (ExprConcat args3)),[])
                             LT -> Error.throwError $ $(curLoc) ++ "Not in normal form: overapplied constructor: " ++ pprString (dst,f,args) ++ show argTys
                             GT -> Error.throwError $ $(curLoc) ++ "Not in normal form: underapplied constructor: " ++ pprString (dst,f,args') ++ show argTys
                     SPType _ conArgsPairs -> do
@@ -343,16 +347,15 @@ genFromInteger dst [_,arg] = do
   lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
   let litExpr = case dstType of
-        UnsignedType len -> mkUncondAssign (dst,dstType) (toSLV dstType $ ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+        UnsignedType len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
 
 genShiftIntoL :: BuiltinBuilder
 genShiftIntoL dst [_,_,_,_,Var elArg,Var vecArg] = do
   dstType@(VecType len etype) <- mkHType vecArg
-  let etypeSize = htypeSize etype
   let [elName,vecName] = map varStringUniq [elArg,vecArg]
-  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum ((toInteger $ len * etypeSize) - 1)) (ExprLit Nothing $ ExprNum $ toInteger etypeSize)])
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 1)) (ExprLit Nothing $ ExprNum 1)])
   let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
   return (comment:assignExpr,[])
 
@@ -360,7 +363,7 @@ genVLast :: BuiltinBuilder
 genVLast dst [_,Var vecArg] = do
   dstType <- mkHType dst
   let vecName = varStringUniq vecArg
-  let selExpr = mkUncondAssign (dst,dstType) (ExprSlice vecName (ExprLit Nothing $ ExprNum $ (toInteger $ htypeSize dstType) - 1) (ExprLit Nothing $ ExprNum 0))
+  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum 0))
   let comment = genComment dst "vlast" [Var vecArg]
   return (comment:selExpr,[])
 

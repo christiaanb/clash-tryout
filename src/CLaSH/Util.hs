@@ -130,3 +130,12 @@ firstM ::
   -> f (c, b)
 firstM f (x,y) = fmap (flip (,) $ y) (f x)
 
+getAndModify ::
+  State.MonadState s m
+  => (s :-> a)
+  -> (a -> a)
+  -> m a
+getAndModify lens modifier = do
+  a <- Label.gets lens
+  Label.modify lens modifier
+  return a

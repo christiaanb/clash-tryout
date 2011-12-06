@@ -23,7 +23,7 @@ import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
 import CLaSH.Desugar                  (desugar)
 import CLaSH.Netlist                  (genNetlist)
-import CLaSH.Netlist.GenVHDL          (genVHDL)
+import CLaSH.Netlist.GenVHDL          (genVHDL,genTypes)
 import CLaSH.Normalize                (normalize)
 import CLaSH.Util.CoreHW              (termType)
 import CLaSH.Util.Pretty              (pprString)
@@ -46,9 +46,10 @@ generateVHDL modName = do
         globalBindings'           <- desugar      globalBindings  topEntity
         coreHWBindings            <- coreToCoreHW globalBindings' topEntity
         (normalized,netlistState) <- normalize    coreHWBindings  topEntity
-        netlist                   <- genNetlist   netlistState    normalized topEntity
-        let vhdl                  = map ((flip genVHDL) ["work.all"]) netlist
-        return (topEntity,vhdl)
+        (netlist, elTypes)        <- genNetlist   netlistState    normalized topEntity
+        let (elTypesV,elTypesP)   = case elTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
+        let vhdl                  = map (genVHDL elTypesP) netlist
+        return (topEntity,case elTypesV of [] -> vhdl ; _ -> ("types",elTypesV):vhdl)
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
