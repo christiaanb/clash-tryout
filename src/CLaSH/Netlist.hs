@@ -310,6 +310,7 @@ builtinBuilders =
   , ("+>>"                , (6, genShiftIntoL))
   , ("vlast"              , (2, genVLast))
   , ("singleton"          , (1, genSingleton))
+  , ("vcopy"              , (2, genVCopy))
   ]
 
 genDelay :: BuiltinBuilder
@@ -373,4 +374,12 @@ genSingleton dst [Var eArg] = do
   let eName = varStringUniq eArg
   let assignExpr = mkUncondAssign (dst,dstType) (ExprVar eName)
   let comment = genComment dst "singleton" [Var eArg]
+  return (comment:assignExpr,[])
+
+genVCopy :: BuiltinBuilder
+genVCopy dst [_,Var eArg] = do
+  dstType <- mkHType dst
+  let eName = varStringUniq eArg
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprAll (ExprVar eName))
+  let comment = genComment dst "vcopy" [Var eArg]
   return (comment:assignExpr,[])

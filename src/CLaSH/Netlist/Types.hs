@@ -68,6 +68,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprVar     Ident
           | ExprIndex   Ident Expr
           | ExprSlice   Ident Expr Expr
+          | ExprAll     Expr
           | ExprConcat  [Expr]
           | ExprCase    Expr [([ConstExpr], Expr)] (Maybe Expr)
           | ExprCond    Expr Expr Expr

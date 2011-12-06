@@ -24,4 +24,5 @@ builtinFuns :: [String]
 builtinFuns = ["xorB","andB","notB","orB","delay",
   "+>>","vlast", "singleton", "empty", "+>","smallInteger","eqUnsigned",
   "neqUnsigned","plusUnsigned", "minUnsigned", "timesUnsigned",
-  "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned"]
+  "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned",
+  "vcopyn", "vcopy"]

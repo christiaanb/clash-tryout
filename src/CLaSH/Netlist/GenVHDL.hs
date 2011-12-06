@@ -201,6 +201,7 @@ expr (ExprLit mb_sz lit) = expr_lit mb_sz lit
 expr (ExprVar n) = text n
 expr (ExprIndex s i) = text s <> parens (expr i)
 expr (ExprSlice s h l) = text s <> parens (expr h <+> text "downto" <+> expr l)
+expr (ExprAll e) = parens (text "others =>" <+> expr e)
 expr (ExprConcat ss) = hcat $ punctuate (text " & ") (map expr ss)
 expr (ExprUnary op e) = lookupUnary op (expr e)
 expr (ExprBinary op a b) = lookupBinary op (expr a) (expr b)
