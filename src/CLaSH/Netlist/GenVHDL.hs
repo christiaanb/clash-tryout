@@ -43,7 +43,7 @@ toVecFunBody elTy =
   nest 2 (text "begin" $$
           nest 2 (text "for n in 0 to (ain'length - 1) loop" $$
                   nest 2 (text "res" <> parens (text "(n+1) *" <+> text elTySize <+> text "- 1 downto" <+> parens (text "n*" <> text elTySize)) <+>
-                          text ":=" <+> text (toSLVString elTy) <> parens (text "ain(n)")) <> semi $$
+                          text ":=" <+> text (render $ expr (toSLV elTy (ExprIndex "ain" (ExprVar "n")))) <> semi) $$
                   text "end loop" <> semi $$
                   text "return res" <> semi
                  ) $$
@@ -59,7 +59,7 @@ fromVecFunBody elTy =
   nest 2 (text "begin" $$
           nest 2 (text "for n in 0 to (res'length - 1) loop" $$
                   nest 2 (text "res(n) :=" <+>
-                          text (fromSLVString elTy) <> parens (text "vin" <> parens (text "(n+1) *" <+> text elTySize <+> text "- 1 downto" <+> parens (text "n*" <> text elTySize)))) <> semi $$
+                          text (render $ expr (fromSLV elTy (ExprSlice "vin" (ExprVar $ "(n+1) * " ++ elTySize ++ " - 1") (ExprVar $ "n*" ++ elTySize)))) <> semi) $$
                   text "end loop" <> semi $$
                   text "return res" <> semi
                  ) $$
