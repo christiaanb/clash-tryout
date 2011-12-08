@@ -150,7 +150,7 @@ loopDesugar ctx expr@(Var loop) | Name.getOccString loop == "loop" = do
   let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
   let ([bTV,dTV,cTV],_,compTy'')    = TcType.tcSplitSigmaTy compTy'
-  let [bTy,dTy,cTy]                 = map Type.mkTyVarTy [bTV,cTV,dTV]
+  let [bTy,dTy,cTy]                 = map Type.mkTyVarTy [bTV,dTV,cTV]
   let finpTy                        = TysWiredIn.mkBoxedTupleTy [bTy, dTy]
   let foutpTy                       = TysWiredIn.mkBoxedTupleTy [cTy, dTy]
   let fTy                           = Type.mkFunTy finpTy foutpTy
