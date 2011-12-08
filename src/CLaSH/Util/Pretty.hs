@@ -36,8 +36,6 @@ encode_ch :: Char -> EncodedString
 encode_ch c | unencodedChar c = [c]     -- Common case first
 
 -- Constructors
-encode_ch '('  = "ZL"   -- Needed for things like (,), and (->)
-encode_ch ')'  = "ZR"   -- For symmetry with (
 encode_ch '['  = "ZM"
 encode_ch ']'  = "ZN"
 encode_ch ':'  = "ZC"
@@ -71,4 +69,5 @@ unencodedChar :: Char -> Bool   -- True for chars that don't need encoding
 unencodedChar c   =  c >= 'a' && c <= 'z'
                   || c >= 'A' && c <= 'Z'
                   || c >= '0' && c <= '9'
-                  || c == '_'
+                  || c == '_' || c == '('
+                  || c == ')'
