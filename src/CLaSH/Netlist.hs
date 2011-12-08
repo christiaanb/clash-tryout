@@ -320,8 +320,8 @@ builtinBuilders =
   , ("minSigned"          , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
   , ("timesSigned"        , (3, genTimes))
   , ("unsignedFromInteger", (2, genFromInteger))
-  , ("+>>"                , (6, genShiftIntoL))
   , ("signedFromInteger"  , (2, genFromInteger))
+  , ("+>>"                , (2, genShiftIntoL))
   , ("vlast"              , (2, genVLast))
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
@@ -373,7 +373,7 @@ genFromInteger dst [_,arg] = do
   return (comment:litExpr,[])
 
 genShiftIntoL :: BuiltinBuilder
-genShiftIntoL dst [_,_,_,_,Var elArg,Var vecArg] = do
+genShiftIntoL dst [Var elArg,Var vecArg] = do
   dstType@(VecType len etype) <- mkHType vecArg
   let [elName,vecName] = map varString [elArg,vecArg]
   let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 1)) (ExprLit Nothing $ ExprNum 1)])

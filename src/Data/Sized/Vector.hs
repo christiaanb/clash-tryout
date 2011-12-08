@@ -187,13 +187,11 @@ vzip = liftV2 zip
 vunzip :: Vector s (a, b) -> (Vector s a, Vector s b)
 vunzip (Vector xs) = let (a,b) = unzip xs in (Vector a, Vector b)
 
-(+>>) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) =>
-              a -> Vector s a -> Vector s a
-x +>> xs = x +> vinit xs
+(+>>) :: a -> Vector s a -> Vector s a
+x +>> (Vector xs) = Vector (x : init xs)
 
-(<<+) :: (PositiveT s, NaturalT n, n ~ Pred s, s ~ Succ n) =>
-              Vector s a -> a -> Vector s a
-xs <<+ x = vtail xs <+ x
+(<<+) :: Vector s a -> a -> Vector s a
+(Vector xs) <<+ x = Vector (tail xs ++ [x])
 
 vrotl :: forall s a . NaturalT s => Vector s a -> Vector s a
 vrotl = liftV rotl'
