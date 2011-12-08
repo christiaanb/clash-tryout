@@ -322,6 +322,7 @@ builtinBuilders =
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("signedFromInteger"  , (2, genFromInteger))
   , ("+>>"                , (2, genShiftIntoL))
+  , ("+>"                 , (2, genVCons))
   , ("vlast"              , (2, genVLast))
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
@@ -433,6 +434,14 @@ genVzipWith dst [_,fArg,Var v1Arg,Var v2Arg] = do
   (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
   let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . varString) bndrs)
   return (comment : tempDelcs ++ assigns ++ assignExpr,clks)
+
+genVCons :: BuiltinBuilder
+genVCons dst [eArg,vArg] = do
+  dstType <- mkHType dst
+  let comment = genComment dst "(+>)" [eArg,vArg]
+  args' <- mapM varToExpr [eArg,vArg]
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat args')
+  return (comment:assignExpr,[])
 
 genTimes :: BuiltinBuilder
 genTimes dst [_,arg1,arg2] = do
