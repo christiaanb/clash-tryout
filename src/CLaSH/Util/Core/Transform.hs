@@ -19,8 +19,6 @@ import qualified Data.Label.PureM as Label
 import Language.KURE (RewriteM, markM, runRewrite, extractR, bottomupR, tryR,
   promoteR, Rewrite, topdownR, liftQ)
 
-import Debug.Trace
-
 -- GHC API
 import qualified CoreSubst
 import CoreSyn (Expr(..),Bind(..))
@@ -49,25 +47,25 @@ changed ::
   -> CoreSyn.CoreExpr
   -> RewriteM (TransformSession m) [CoreContext] CoreSyn.CoreExpr
 changed tId expr = do
-  liftQ $ Label.modify tsTransformCounter (+1) 
+  liftQ $ Label.modify tsTransformCounter (+1)
   markM $ return expr
 
-inlineBind :: 
-  (Monad m) 
-  => String 
-  -> (CoreBinding -> (TransformSession m) Bool) 
+inlineBind ::
+  (Monad m)
+  => String
+  -> (CoreBinding -> (TransformSession m) Bool)
   -> TransformStep m
 inlineBind callerId condition context (Let (NonRec bndr val) res) = inlineBind' callerId condition [(bndr,val)] res context
 inlineBind callerId condition context (Let (Rec binds) res)       = inlineBind' callerId condition binds        res context
 inlineBind callerId condition context expr                        = fail "inlineBind"
 
-inlineBind' :: 
-  (Monad m) 
-  => String 
-  -> (CoreBinding -> (TransformSession m) Bool) 
-  -> [CoreBinding] 
-  -> CoreSyn.CoreExpr 
-  -> [CoreContext] 
+inlineBind' ::
+  (Monad m)
+  => String
+  -> (CoreBinding -> (TransformSession m) Bool)
+  -> [CoreBinding]
+  -> CoreSyn.CoreExpr
+  -> [CoreContext]
   -> RewriteM (TransformSession m) [CoreContext] CoreSyn.CoreExpr
 inlineBind' callerId condition binds res context = do
     (replace,others) <- liftQ $ partitionM condition binds
@@ -77,7 +75,7 @@ inlineBind' callerId condition binds res context = do
         newExpr <- doSubstitute replace (Let (Rec others) res)
         changed callerId newExpr
   where
-    doSubstitute :: 
+    doSubstitute ::
       (Monad m)
       => [CoreBinding]
       -> CoreSyn.CoreExpr
@@ -89,9 +87,9 @@ inlineBind' callerId condition binds res context = do
       -- And in the substitution values we will be using next
       reps' <- mapM (subsBind bndr val) reps
       doSubstitute reps' expr'
-    
+
     bndrs = map fst binds
-    
+
     subsBind ::
       (Monad m)
       => CoreSyn.CoreBndr
@@ -104,16 +102,16 @@ inlineBind' callerId condition binds res context = do
 
 substitute ::
   (Monad m)
-  => CoreSyn.CoreBndr 
+  => CoreSyn.CoreBndr
   -> CoreSyn.CoreExpr
   -> TransformStep m
 substitute find repl context expr = do
   let subst = CoreSubst.extendSubst CoreSubst.emptySubst find repl
   return $ CoreSubst.substExpr (Outputable.text "substitute") subst expr
-      
+
 substituteAndClone ::
   (Monad m)
-  => CoreSyn.CoreBndr 
+  => CoreSyn.CoreBndr
   -> CoreSyn.CoreExpr
   -> TransformStep m
 substituteAndClone find repl context expr = do
@@ -126,10 +124,10 @@ substituteAndClone find repl context expr = do
     substituteAndClone' context expr@(CoreSyn.Var var) | find == var = do
       repl' <- regenUniques context repl
       return repl'
-    
+
     substituteAndClone' context expr = fail "substituteAndClone'"
 
-regenUniques :: 
+regenUniques ::
   (Monad m)
   => TransformStep m
 regenUniques ctx expr = do
@@ -140,12 +138,12 @@ regenUniques ctx expr = do
     Left  errMsg      -> liftQ $ Error.throwError ($(curLoc) ++ "uniqueRegen failed, this should not happen: " ++ errMsg)
   return expr'
 
-regenUniquesStrat :: 
+regenUniquesStrat ::
   (Monad m)
   => Rewrite (TransformSession m) [CoreContext] CoreSyn.CoreExpr
 regenUniquesStrat = (extractR . topdownR . tryR . promoteR . transformationStep) regenUniques'
 
-regenUniques' :: 
+regenUniques' ::
   (Monad m)
   => TransformStep m
 regenUniques' ctx (Var bndr) = do
@@ -198,10 +196,10 @@ substBndrs bndrs = liftQ $ do
   Label.puts tsBndrSubst subst'
   return bndr'
 
-regenUnique :: 
+regenUnique ::
   (Monad m)
-  => VarEnv.VarEnv CoreSyn.CoreBndr 
-  -> CoreSyn.CoreBndr 
+  => VarEnv.VarEnv CoreSyn.CoreBndr
+  -> CoreSyn.CoreBndr
   -> (TransformSession m) (VarEnv.VarEnv CoreSyn.CoreBndr, CoreSyn.CoreBndr)
 regenUnique subst bndr = do
   bndr' <- cloneVar bndr
@@ -210,7 +208,7 @@ regenUnique subst bndr = do
 
 cloneVar ::
   (Monad m)
-  => Var.Var 
+  => Var.Var
   -> (TransformSession m) Var.Var
 cloneVar v = do
   uniq <- mkUnique
@@ -252,8 +250,8 @@ mkExternalVar modName funName ty = do
 
 mkTypeVar ::
   (Monad m)
-  => String 
-  -> Type.Kind 
+  => String
+  -> Type.Kind
   -> (TransformSession m) Var.Var
 mkTypeVar name kind = do
   uniq <- mkUnique

@@ -1,9 +1,9 @@
 module CLaSH.Normalize where
 
-import qualified CoreSyn
 import CLaSH.Normalize.Types
+import CLaSH.Util.CoreHW (Var, Term)
 
 normalizeMaybe
   :: Bool
-  -> CoreSyn.CoreBndr
-  -> NormalizeSession (Maybe (CoreSyn.CoreBndr, CoreSyn.CoreExpr))
+  -> Var
+  -> NormalizeSession (Maybe (Var, Term))

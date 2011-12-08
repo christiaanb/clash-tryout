@@ -6,6 +6,7 @@ where
 -- External Modules
 import qualified Control.Monad.State.Strict as State
 import qualified Data.Time.Clock as Clock
+import qualified Data.Label.PureM as Label
 import qualified Data.Map as Map
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
@@ -17,18 +18,20 @@ import qualified HscTypes
 import qualified UniqSupply
 
 -- Internal Modules
+import CLaSH.CoreHW                   (coreToCoreHW)
 import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
-import CLaSH.Desugar (desugar)
-import CLaSH.Netlist (genNetlist)
-import CLaSH.Netlist.GenVHDL (genVHDL)
-import CLaSH.Normalize (normalize)
-import CLaSH.Util.Pretty (pprString)
-import CLaSH.Util.GHC (loadModules)
-import CLaSH.Util (curLoc)
+import CLaSH.Desugar                  (desugar)
+import CLaSH.Netlist                  (genNetlist)
+import CLaSH.Netlist.GenVHDL          (genVHDL,genTypes)
+import CLaSH.Normalize                (normalize)
+import CLaSH.Util.CoreHW              (termType)
+import CLaSH.Util.Pretty              (pprString)
+import CLaSH.Util.GHC                 (loadModules)
+import CLaSH.Util                     (curLoc)
 
-generateVHDL :: 
-  String 
+generateVHDL ::
+  String
   -> IO ()
 generateVHDL modName = do
   start <- Clock.getCurrentTime
@@ -40,11 +43,13 @@ generateVHDL modName = do
       [topEntity'] -> do
         let topEntity = fst topEntity'
         let globalBindings = Map.fromList allBindings
-        globalBindings'           <- desugar    globalBindings  topEntity
-        (normalized,netlistState) <- normalize  globalBindings' topEntity
-        netlist                   <- genNetlist netlistState normalized topEntity
-        let vhdl                  = map ((flip genVHDL) ["work.all"]) netlist
-        return (topEntity,vhdl)
+        globalBindings'           <- desugar      globalBindings  topEntity
+        coreHWBindings            <- coreToCoreHW globalBindings' topEntity
+        (normalized,netlistState) <- normalize    coreHWBindings  topEntity
+        (netlist, elTypes)        <- genNetlist   netlistState    normalized topEntity
+        let (elTypesV,elTypesP)   = case elTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
+        let vhdl                  = map (genVHDL elTypesP) netlist
+        return (topEntity,case elTypesV of [] -> vhdl ; _ -> ("types",elTypesV):vhdl)
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
@@ -52,11 +57,11 @@ generateVHDL modName = do
   prepareDir dir
   mapM_ (writeVHDL dir) vhdl
   end <- Clock.getCurrentTime
-  putStrLn $ "\nTotal compilation tooks: " ++ show (Clock.diffUTCTime end start) 
+  putStrLn $ "\nTotal compilation tooks: " ++ show (Clock.diffUTCTime end start)
   return ()
 
 runDriverSession ::
-  DriverSession a 
+  DriverSession a
   -> IO a
 runDriverSession session = do
   uniqSupply <- State.liftIO $ UniqSupply.mkSplitUniqSupply 'z'
