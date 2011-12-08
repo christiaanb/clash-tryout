@@ -27,7 +27,6 @@ data HWType = BitType
             | SumType     String [String]
             | ProductType String [HWType]
             | SPType      String [(String,[HWType])]
-            | UnitType
             | ClockType
             | Invalid String
   deriving (Eq,Ord,Show)

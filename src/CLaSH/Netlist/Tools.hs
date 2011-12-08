@@ -233,7 +233,6 @@ isNormalizedBndr ::
 isNormalizedBndr bndr = fmap (Map.member bndr) $ Label.gets nlNormalized
 
 htypeSize :: HWType -> Size
-htypeSize UnitType                = 0
 htypeSize BitType                 = 1
 htypeSize BoolType                = 1
 htypeSize ClockType               = 1
