@@ -27,31 +27,12 @@ import qualified CLaSH.Util.CoreHW.Syntax as S
 import qualified CLaSH.Util.CoreHW.Tools  as S
 import CLaSH.Util.Pretty
 
-conAppToTerm ::
-  [Var]
-  -> DataCon
-  -> [CoreExpr]
-  -> S.Term
-conAppToTerm unlocs dc es
-  | isNewTyCon (dataConTyCon dc)
-  = error ("newtype not supported: " ++ pprString dc ++ " " ++ pprString es)
-  | otherwise
-  = let valEs' = map (coreExprToTerm unlocs) valEs
-    in foldl S.App (foldl S.TyApp (S.Data dc) tys') valEs'
-  where
-    (tys', valEs) = takeWhileJust fromType_maybe es
-
-    fromType_maybe (Type ty) = Just ty
-    fromType_maybe _         = Nothing
-
 coreExprToTerm ::
   [Var]
   -> CoreExpr
   -> S.Term
 coreExprToTerm unlocs = term
   where
-    term e | Just (dc, univTys, es) <- exprIsConApp_maybe (const NoUnfolding) e
-           = conAppToTerm unlocs dc (map Type univTys ++ es)
     term (Var x)                 = case (isDataConWorkId_maybe x) of
                                     Just dc | isNewTyCon (dataConTyCon dc) -> error $ "Newtype not supported: " ++ pprString dc
                                             | otherwise                    -> if (S.varString x `elem` S.builtinDataCons) then S.Prim (S.PrimCon dc) else S.Data dc

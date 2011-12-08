@@ -104,7 +104,12 @@ mkConcSm (bndr, app@(App _ _)) = do
       Just (argCount, builder) -> if length args == argCount
           then builder bndr args
           else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
-      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive that is not a known builtin: " ++ pprString (bndr,app)
+      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive function that is not a known builtin: " ++ pprString (bndr,app)
+    Prim (PrimCon dc) -> case (List.lookup (varString $ DataCon.dataConWorkId dc) builtinBuilders) of
+      Just (argCount, builder) -> if length args == argCount
+        then builder bndr args
+        else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin constructor(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
+      Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive constructor that is not a known builtin: " ++ pprString (bndr,app)
     _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
 mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
@@ -323,6 +328,8 @@ builtinBuilders =
   , ("vcopyn"             , (3, genVCopyn))
   , ("vfoldl"             , (3, genVfoldl))
   , ("vzipWith"           , (4, genVzipWith))
+  , ("Signed"             , (1, \d args -> genFromInteger d (undefined:args)))
+  , ("Unsigned"           , (1, \d args -> genFromInteger d (undefined:args)))
   ]
 
 genDelay :: BuiltinBuilder
