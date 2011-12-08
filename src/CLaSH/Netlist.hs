@@ -316,6 +316,7 @@ builtinBuilders =
   , ("vlast"              , (2, genVLast))
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
+  , ("vcopyn"             , (3, genVCopyn))
   ]
 
 genDelay :: BuiltinBuilder
@@ -388,3 +389,6 @@ genVCopy dst [_,Var eArg] = do
   let assignExpr = mkUncondAssign (dst,dstType) (ExprAll (ExprVar eName))
   let comment = genComment dst "vcopy" [Var eArg]
   return (comment:assignExpr,[])
+
+genVCopyn :: BuiltinBuilder
+genVCopyn dst args = genVCopy dst (tail args)
