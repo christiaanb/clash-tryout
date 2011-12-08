@@ -110,6 +110,10 @@ mkHType' ty | tyHasFreeTyVars ty = Error.throwError ($(curLoc) ++ "Cannot create
           let [lenTy] = args
           len         <- fmap fromInteger $ fromTfpInt nlTfpSyn lenTy
           return $ UnsignedType len
+        "Signed"  -> do
+          let [lenTy] = args
+          len         <- fmap fromInteger $ fromTfpInt nlTfpSyn lenTy
+          return $ SignedType len
         "Bit"       -> return BitType
         "Bool"      -> return BoolType
         "Int#"      -> return IntegerType
@@ -240,6 +244,7 @@ htypeSize BoolType                = 1
 htypeSize ClockType               = 1
 htypeSize IntegerType             = 32
 htypeSize (UnsignedType len)      = len
+htypeSize (SignedType len)        = len
 htypeSize (VecType s eType)       = s * htypeSize eType
 htypeSize (SumType _ [_])         = 0
 htypeSize (SumType _ fields)      = ceiling $ logBase 2 $ fromIntegral $ length fields
@@ -353,12 +358,14 @@ fromSLV t       e             = ExprFunCall (fromSLVString t) [e]
 toSLVString :: HWType -> String
 toSLVString IntegerType       = error "Integer cannot be converted to SLV"
 toSLVString (UnsignedType _)  = "std_logic_vector"
+toSLVString (SignedType _)    = "std_logic_vector"
 toSLVString (VecType _ _)     = "toSLV"
 toSLVString _                 = ""
 
 fromSLVString :: HWType -> String
 fromSLVString IntegerType       = error "Integer cannot be converted from SLV"
 fromSLVString (UnsignedType _)  = "unsigned"
+fromSLVString (SignedType _)    = "signed"
 fromSLVString (VecType _ _)     = "fromSLV"
 fromSLVString _                 = ""
 

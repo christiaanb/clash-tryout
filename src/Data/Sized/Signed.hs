@@ -48,8 +48,22 @@ isNegative (Signed x) =
     B.testBit x $ signBit (undefined :: nT)
 
 instance PositiveT nT => Eq (Signed nT) where
-    (Signed x) == (Signed y) = x == y
-    (Signed x) /= (Signed y) = x /= y
+  (==) = eqSigned
+  (/=) = neqSigned
+
+eqSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+  -> Bool
+eqSigned  (Signed x) (Signed y) = x == y
+
+neqSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+  -> Bool
+neqSigned (Signed x) (Signed y) = x /= y
 
 instance PositiveT nT => Show (Signed nT) where
     showsPrec prec n =
@@ -92,36 +106,69 @@ instance PositiveT nT => Enum (Signed nT) where
             where x' = toInteger x
 
 instance PositiveT nT => Num (Signed nT) where
-    (Signed a) + (Signed b) =
-        fromInteger $ a + b
-    (Signed a) * (Signed b) =
-        fromInteger $ a * b
-    negate (Signed n) =
-        fromInteger $ (n `B.xor` mask (undefined :: nT)) + 1
-    a - b =
-        a + (negate b)
+  (+)         = plusSigned
+  (-)         = minSigned
+  (*)         = timesSigned
+  negate      = negateSigned
+  fromInteger = signedFromInteger
+  abs         = absSigned
+  signum      = signumSigned
 
-    fromInteger n
-      | n > 0 =
-        Signed $ n B..&. mask (undefined :: nT)
-    fromInteger n
-      | n < 0 =
-        negate $ fromInteger $ negate n
-    fromInteger _ =
-        Signed 0
+plusSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+  -> Signed nT
+plusSigned (Signed a) (Signed b) = signedFromInteger $ (a + b)
 
-    abs s
-      | isNegative s =
-          negate s
-      | otherwise =
-          s
-    signum s
-      | isNegative s =
-          -1
-      | s == 0 =
-          0
-      | otherwise =
-          1
+minSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+  -> Signed nT
+minSigned a b = a + (negateSigned b)
+
+timesSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+  -> Signed nT
+timesSigned (Signed a) (Signed b) = signedFromInteger $ (a * b)
+
+negateSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+negateSigned s@(Signed n) =
+  signedFromInteger $ (n `B.xor` mask (sizeT s)) + 1
+
+signedFromInteger ::
+  forall nT
+  . PositiveT nT
+  => Integer
+  -> Signed nT
+signedFromInteger n
+  | n > 0
+  = Signed $ n B..&. mask (undefined :: nT)
+  | n < 0
+  = negateSigned $ signedFromInteger $ negate n
+  | otherwise
+  = Signed 0
+
+absSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+absSigned s | isNegative s = negateSigned s
+            | otherwise    = s
+
+signumSigned ::
+  PositiveT nT
+  => Signed nT
+  -> Signed nT
+signumSigned (Signed 0)       = Signed 0
+signumSigned s | isNegative s = signedFromInteger (-1)
+               | otherwise    = signedFromInteger 1
 
 instance PositiveT nT => Real (Signed nT) where
     toRational n = toRational $ toInteger n

@@ -15,14 +15,16 @@ builtinDicts = ["$dPositiveT","$dNaturalT","$dIntegerT"]
 
 builtinDFuns :: [String]
 builtinDFuns = ["$fShowUnsigned","$fEqInteger","$fPositiveTx","$fNaturalTx",
-  "$fArrowComponent","$fArrowLoopComponent"]
+  "$fArrowComponent","$fArrowLoopComponent","$fShowSigned"]
 
 builtinDataCons :: [String]
-builtinDataCons = ["I#","Int#"]
+builtinDataCons = ["I#","Int#","Signed","Unsigned"]
 
 builtinFuns :: [String]
 builtinFuns = ["xorB","andB","notB","orB","delay",
   "+>>","vlast", "singleton", "empty", "+>","smallInteger","eqUnsigned",
   "neqUnsigned","plusUnsigned", "minUnsigned", "timesUnsigned",
   "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned",
+  "eqSigned", "neqSigned","plusSigned", "minSigned", "timesSigned",
+  "negateSigned", "signedFromInteger", "absSigned", "signumSigned",
   "vcopyn", "vcopy", "vfoldl", "vzipWith"]

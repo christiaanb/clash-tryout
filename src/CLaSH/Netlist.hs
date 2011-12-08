@@ -311,8 +311,12 @@ builtinBuilders =
   , ("delay"              , (3, genDelay))
   , ("plusUnsigned"       , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
   , ("minUnsigned"        , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
+  , ("plusSigned"         , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
+  , ("minSigned"          , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
+  , ("timesSigned"        , (3, genTimes))
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("+>>"                , (6, genShiftIntoL))
+  , ("signedFromInteger"  , (2, genFromInteger))
   , ("vlast"              , (2, genVLast))
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
@@ -357,6 +361,7 @@ genFromInteger dst [_,arg] = do
   dstType <- mkHType dst
   let litExpr = case dstType of
         UnsignedType len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+        SignedType   len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
 
@@ -421,3 +426,11 @@ genVzipWith dst [_,fArg,Var v1Arg,Var v2Arg] = do
   (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
   let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . varString) bndrs)
   return (comment : tempDelcs ++ assigns ++ assignExpr,clks)
+
+genTimes :: BuiltinBuilder
+genTimes dst [_,arg1,arg2] = do
+  dstType <- mkHType dst
+  let len = (case dstType of UnsignedType l -> l; SignedType l -> l)
+  [arg1',arg2'] <- mapM varToExpr [arg1,arg2]
+  let comment = genComment dst "(*)" [arg1,arg2]
+  return (comment:(mkUncondAssign (dst,dstType) (ExprFunCall "resize" [ExprBinary Times arg1' arg2',ExprLit Nothing $ ExprNum $ fromIntegral len])), [])

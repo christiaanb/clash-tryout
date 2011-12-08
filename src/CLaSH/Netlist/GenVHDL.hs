@@ -230,6 +230,7 @@ binOp Or  = "or"
 binOp Equals = "="
 binOp Plus = "+"
 binOp Minus = "-"
+binOp Times = "*"
 
 mkSensitivityList :: Decl -> [Expr]
 mkSensitivityList (ProcessDecl evs) = nub event_names
@@ -244,6 +245,7 @@ tyName BitType             = "std_logic"
 tyName BoolType            = "std_logic"
 tyName ClockType           = "std_logic"
 tyName (UnsignedType len)  = "unsigned" ++ show len
+tyName (SignedType len)    = "signed" ++ show len
 tyName (VecType _ e)       = vecTyName e
 tyName t@(ProductType n _) = zEncodeString n
 tyName (SumType n _)       = zEncodeString n
@@ -256,6 +258,7 @@ slv_type BitType                  = text "std_logic"
 slv_type BoolType                 = text "std_logic"
 slv_type ClockType                = text "std_logic"
 slv_type (UnsignedType len)       = text "unsigned" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
+slv_type (SignedType len)         = text "signed" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(VecType s e)     = text (tyName hwtype) <> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(ProductType _ _) = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(SumType _ _)     = text "std_logic_vector" <> range (ExprLit Nothing $ ExprNum $ toInteger $ htypeSize hwtype - 1, ExprLit Nothing $ ExprNum 0)
