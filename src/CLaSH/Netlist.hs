@@ -44,7 +44,7 @@ genNetlist nlState normalized topEntity = do
   case retVal of
     Left errMsg   -> error errMsg
     Right netlist -> do
-      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ _ -> True; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
+      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType && e /= BoolType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
       return (netlist,elTypes)
 
 genModules ::
