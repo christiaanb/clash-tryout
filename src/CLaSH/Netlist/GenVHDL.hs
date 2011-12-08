@@ -12,6 +12,7 @@ import Data.List (nub)
 -- Internal Modules
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
+import CLaSH.Util.Pretty (zEncodeString)
 
 genTypes :: [HWType] -> String
 genTypes elTypes = render vhdl ++ "\n"
@@ -117,7 +118,7 @@ decls ds = let
 
 decl :: Decl -> Maybe Doc
 decl (NetDecl i r Nothing) = Just $
-  text "signal" <+> text i <+> colon <+> slv_type r
+  text "signal" <+> text (mkVHDLBasicId i) <+> colon <+> slv_type r
 
 decl (NetDecl i r (Just init)) = Just $
   text "signal" <+> text i <+> colon <+> slv_type r <+> text ":=" <+> expr init
@@ -239,14 +240,14 @@ mkSensitivityList (ProcessDecl evs) = nub event_names
 		    ) evs
 
 tyName :: HWType -> String
-tyName BitType               = "std_logic"
-tyName BoolType              = "bool"
-tyName ClockType             = "clk"
-tyName (UnsignedType len)    = "unsigned" ++ show len
-tyName (VecType s e)         = vecTyName e
-tyName t@(ProductType n tys) = "slv" ++ show (htypeSize t)
-tyName (SumType n _)         = n
-tyName t@(SPType n _)        = "slv" ++ show (htypeSize t)
+tyName BitType             = "std_logic"
+tyName BoolType            = "std_logic"
+tyName ClockType           = "std_logic"
+tyName (UnsignedType len)  = "unsigned" ++ show len
+tyName (VecType _ e)       = vecTyName e
+tyName t@(ProductType n _) = zEncodeString n
+tyName (SumType n _)       = zEncodeString n
+tyName t@(SPType n _)      = zEncodeString n
 
 vecTyName e = (tyName e) ++ "_vector"
 

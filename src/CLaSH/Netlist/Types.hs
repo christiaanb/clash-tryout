@@ -104,12 +104,13 @@ data NetlistState = NetlistState
   { _nlTypes      :: Map OrdType HWType
   , _nlModCnt     :: Integer
   , _nlVarCnt     :: Integer
+  , _nlTypeCnt    :: Integer
   , _nlMods       :: Map Var Module
   , _nlNormalized :: Map Var Term
   , _nlTfpSyn     :: Map TyCon.TyCon Integer
   }
 
-empytNetlistState = NetlistState empty 0 0 empty empty empty
+empytNetlistState = NetlistState empty 0 0 0 empty empty empty
 
 Data.Label.mkLabels [''NetlistState]
 

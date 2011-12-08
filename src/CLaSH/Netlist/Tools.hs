@@ -25,6 +25,7 @@ module CLaSH.Netlist.Tools
   , untranslatableHType
   , hasUntranslatableType
   , mkTempAssign
+  , makeUnique
   )
 where
 
@@ -48,10 +49,10 @@ import qualified VarSet
 
 -- internal Module
 import CLaSH.Netlist.Types
-import CLaSH.Util (curLoc,makeCached,getAndModify)
-import CLaSH.Util.CoreHW (CoreBinding, TypedThing(..), Term(..), Var, nameString, varStringUniq, tyHasFreeTyVars,
+import CLaSH.Util (curLoc,makeCached,getAndModify,second)
+import CLaSH.Util.CoreHW (CoreBinding, TypedThing(..), Term(..), Var, OrdType(..), nameString, varString, varStringUniq, tyHasFreeTyVars,
   flattenLets, fromTfpInt, collectBndrs, dataConIndex)
-import CLaSH.Util.Pretty (pprString)
+import CLaSH.Util.Pretty (pprString,zEncodeString)
 
 isRepr ::
   TypedThing t
@@ -122,6 +123,8 @@ mkAdtHWType ::
 mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
     [] -> Error.throwError ($(curLoc) ++ "There are no known DataCons for type: " ++ pprString tyCon ++ " " ++ (case args of [] -> ""; _ -> pprString args))
     dcs -> do
+      cnt <- getAndModify nlTypeCnt (+1)
+      let name = name' ++ "_" ++ show cnt
       let argTyss = map DataCon.dataConRepArgTys dcs
       let sumTy   = SumType name $ map (nameString . DataCon.dataConName) dcs
       case (concat argTyss) of
@@ -129,12 +132,12 @@ mkAdtHWType tyCon args = case TyCon.tyConDataCons tyCon of
         _  -> do
           let realArgTys = (map . map) (CoreSubst.substTy subst) argTyss
           elemHTyss <- mapM (mapM mkHType) realArgTys
-          case (dcs, map (filter (/= UnitType)) elemHTyss) of
+          case (dcs, map (filter (not . emptyType)) elemHTyss) of
             ([dc], [[elemHTy]]) -> return elemHTy
             ([dc], [elemHTys]) -> return $ ProductType name elemHTys
             (dcs,elemHTyss)     -> return $ SPType name $ zip (map (nameString . DataCon.dataConName) dcs) elemHTyss
   where
-    name = nameString $ TyCon.tyConName tyCon
+    name' = nameString $ TyCon.tyConName tyCon
 
     tyvars                  = TyCon.tyConTyVars tyCon
     tyVarArgMap             = zip tyvars args
@@ -196,7 +199,7 @@ mkAssign ::
   -> [Decl]
 mkAssign (dst,dstTy) cond falseExpr = [NetAssign dstName assignExpr]
   where
-    dstName    = varStringUniq dst
+    dstName    = mkVHDLBasicId $ varString dst
     assignExpr = case cond of
       Nothing -> falseExpr
       Just (condExpr,trueExpr) -> ExprCond condExpr trueExpr falseExpr
@@ -208,7 +211,7 @@ varToExpr (Var var) = case Id.isDataConWorkId_maybe var of
   Just dc -> do
     varTy <- mkHType var
     dataconToExpr varTy dc
-  Nothing -> return $ ExprVar $ varStringUniq var
+  Nothing -> return $ ExprVar $ mkVHDLBasicId $ varString var
 varToExpr e = Error.throwError $ $(curLoc) ++ "not a Var: " ++ pprString e
 
 dataconToExpr ::
@@ -319,27 +322,81 @@ genComment ::
 genComment dst f args = CommentDecl $ pprString dst ++ " = " ++ f ++ (concatMap (\x -> " " ++ pprString x) args) ++ " :: " ++ ((pprString . Maybe.fromJust . getType) dst)
 
 mkVHDLBasicId :: String -> Ident
-mkVHDLBasicId = (stripLeading . stripInvalid)
+mkVHDLBasicId = (stripMultiscore . stripLeading . zEncodeString)
   where
-    stripInvalid    = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'])
+    stripInvalid    = filter (`elem` ['A'..'Z'] ++ ['a'..'z'] ++ ['0'..'9'] ++ ['_'])
     stripLeading    = dropWhile (`elem` ['0'..'9'])
+    stripMultiscore = concatMap (\cs ->
+        case cs of
+          ('_':_) -> "_"
+          _ -> cs
+      ) . List.group
 
 toSLV :: HWType -> Expr -> Expr
-toSLV t = ExprFunCall (toSLVString t) . (:[])
+toSLV BitType           e = e
+toSLV BoolType          e = e
+toSLV (SumType _ _)     e = e
+toSLV (ProductType _ _) e = e
+toSLV (SPType _ _)      e = e
+toSLV t                 e = ExprFunCall (toSLVString t) [e]
 
 fromSLV :: HWType -> Expr -> Expr
-fromSLV t = ExprFunCall (fromSLVString t) . (:[])
+fromSLV BitType (ExprVar v)   = ExprIndex v (ExprLit Nothing $ ExprNum 0)
+fromSLV BoolType (ExprVar v)  = ExprIndex v (ExprLit Nothing $ ExprNum 0)
+fromSLV ClockType (ExprVar v) = ExprIndex v (ExprLit Nothing $ ExprNum 0)
+fromSLV (SumType _ _)     e   = e
+fromSLV (ProductType _ _) e   = e
+fromSLV (SPType _ _)      e   = e
+fromSLV t       e             = ExprFunCall (fromSLVString t) [e]
 
 toSLVString :: HWType -> String
-toSLVString (VecType _ _)    = "toSLV"
-toSLVString (UnsignedType _) = "std_logic_vector"
+toSLVString IntegerType       = error "Integer cannot be converted to SLV"
+toSLVString (UnsignedType _)  = "std_logic_vector"
+toSLVString (VecType _ _)     = "toSLV"
+toSLVString _                 = ""
 
 fromSLVString :: HWType -> String
-fromSLVString (VecType _ _)    = "fromSLV"
-fromSLVString (UnsignedType _) = "unsigned"
+fromSLVString IntegerType       = error "Integer cannot be converted from SLV"
+fromSLVString (UnsignedType _)  = "unsigned"
+fromSLVString (VecType _ _)     = "fromSLV"
+fromSLVString _                 = ""
+
 
 mkTempAssign :: HWType -> Expr -> NetlistSession (Ident,[Decl])
 mkTempAssign hTy assignExpr = do
   t <- getAndModify nlVarCnt (+1)
-  let dstName = "tmp" ++ (show t)
+  let dstName = "tmp_" ++ (show t)
   return (dstName, [NetDecl dstName hTy Nothing, NetAssign dstName assignExpr])
+
+makeUnique :: ([Var],[CoreBinding],Var) -> NetlistSession ([Var],[(Var,Term)],Var)
+makeUnique (args,binds,res) = do
+  let args'  = zipWith appendToName args (zipWith (++) (repeat "_i") (map show [1..]))
+  let res'   = appendToName res "_o"
+  bndrs'     <- mapM (makeUnique' [(res,res')] . fst) binds
+  let repl   = (res,res'):(zip args args')++(zip (map fst binds) bndrs')
+  let exprs' = foldl update (map snd binds) repl
+  return (args',zip bndrs' exprs', res')
+  where
+    update :: [Term] -> (Var,Var) -> [Term]
+    update es (f,r) = map (subs f r) es
+
+    subs f r e = case e of
+      (Var v) | v == f -> Var r
+      (App t1 t2)      -> App (subs f r t1) (subs f r t2)
+      (Case t ty alts) -> Case (subs f r t) ty (map (second (subs f r)) alts)
+      x                -> x
+
+makeUnique' :: [(Var,Var)] -> Var -> NetlistSession Var
+makeUnique' repl v = case (List.lookup v repl) of
+    Just b -> return b
+    Nothing -> do
+      t <- getAndModify nlVarCnt (+1)
+      let v' = appendToName v ("_" ++ show t)
+      return v'
+
+appendToName :: Var -> String -> Var
+appendToName v a = v'
+  where
+    n  = Var.varName v
+    n' = Name.mkFCallName (Name.nameUnique n) (varString v ++ a)
+    v' = Var.setVarName v n'

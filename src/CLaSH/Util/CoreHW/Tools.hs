@@ -83,7 +83,12 @@ instance TypedThing Type where
 nameString ::
   Name
   -> String
-nameString = occNameString . nameOccName
+nameString name = str
+  where
+    name' = occNameString $ nameOccName name
+    str   = case (filter (`notElem` ",") name') of
+      "()" -> "Tuple" ++ show (length name' - 1)
+      _    -> name'
 
 varString ::
   Var

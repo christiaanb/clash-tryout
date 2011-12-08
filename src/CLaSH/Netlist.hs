@@ -69,9 +69,10 @@ genModule' ::
   -> Term
   -> NetlistSession Module
 genModule' modName modExpr = do
-  (args,binds,res)       <- splitNormalized modExpr
+  LabelM.puts nlVarCnt 0
+  (args,binds,res)       <- (\m -> splitNormalized m >>= makeUnique) modExpr
   (resType:argTypes)     <- mapM mkHType (res:args)
-  let (resName:argNames) = map varStringUniq (res:args)
+  let (resName:argNames) = map varString (res:args)
   modCnt           <- LabelM.gets nlModCnt
   LabelM.modify nlModCnt (+1)
   let modName'     = ((++ (show modCnt)) . (\v -> if null v then (v ++ "Component_") else (v ++ "_")) . mkVHDLBasicId . varString) modName
@@ -79,7 +80,7 @@ genModule' modName modExpr = do
   let modInps'     = (zip argNames argTypes) ++ (List.nub $ concat clocks)
   let modInps      = filter (not . untranslatableHType . snd) modInps'
   let modOutps     = [(resName,resType)]
-  modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (varStringUniq d) t Nothing) (filter ((/= res) . fst) binds)
+  modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (varString d) t Nothing) (filter ((/= res) . fst) binds)
   let modAssigns   = concat assigns
   return $ Module modName' modInps modOutps (modDecls ++ modAssigns)
 
@@ -120,20 +121,20 @@ mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
               hwTypeBndr  <- mkHType bndr
               if hwTypeScrut == hwTypeBndr
                 then do
-                  let selName = varStringUniq scrut
+                  let selName = varString scrut
                   let selExpr = ExprVar selName
                   return (comment:(mkUncondAssign (bndr,hwTypeBndr) selExpr), [])
                 else do
                   case hwTypeScrut of
                     ProductType _ _ -> do
                       let fieldSlice = typeFieldRange hwTypeScrut 0 selI
-                      let sliceExpr = mkSliceExpr (varStringUniq scrut) fieldSlice
+                      let sliceExpr = mkSliceExpr (varString scrut) fieldSlice
                       (tempVar, tempExpr) <- mkTempAssign (VecType (htypeSize hwTypeBndr) BitType) sliceExpr
                       return (comment:tempExpr ++ (mkUncondAssign (bndr,hwTypeBndr) (fromSLV hwTypeBndr $ ExprVar tempVar)),[])
                     SPType _ _ -> do
                       dcI <- dataConIndex scrut dc
                       let fieldSlice = typeFieldRange hwTypeScrut dcI selI
-                      let sliceExpr = mkSliceExpr (varStringUniq scrut) fieldSlice
+                      let sliceExpr = mkSliceExpr (varString scrut) fieldSlice
                       return (comment:(mkUncondAssign (bndr,hwTypeBndr) sliceExpr),[])
                     other -> do
                       error $ "mkConcSm: extractor case" ++ show (hwTypeScrut,selI)
@@ -159,7 +160,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) _ alts)) = do
       let conSize = ceiling $ logBase 2 $ fromIntegral $ length conArgsPairs
       let hSize   = htypeSize scrutHWType
       let es      = map (ExprLit (Just conSize) . ExprNum . toInteger) [0..(length conArgsPairs)-1]
-      let cmpE    = mkSliceExpr (varStringUniq scrut) (hSize-1,hSize-conSize)
+      let cmpE    = mkSliceExpr (varString scrut) (hSize-1,hSize-conSize)
       return (es,cmpE)
     other -> error $ "mkConcSm (bndr, expr@(Case (Var scrut) _ _ alts)) " ++ show scrutHWType ++ show scrutExpr
   altcons <- mapM (\(DataAlt dc _, _) -> fmap (enums!!) $ dataConIndex scrut dc) $ tail alts
@@ -251,12 +252,14 @@ genApplication dst f args =  do
               normalized <- isNormalizedBndr f
               if normalized
                 then do
+                  vCnt <- LabelM.gets nlVarCnt
                   modu@(Module modName modInps (modOutps:_) _)  <- genModule f
+                  LabelM.puts nlVarCnt vCnt
                   let clocks = filter ((== ClockType) . snd) modInps
                   let clocksN = filter ((/= ClockType) . snd) modInps
                   if (length clocks + length args) == (length modInps)
                     then do
-                      let dstName = (varStringUniq dst)
+                      let dstName = (varString dst)
                       args' <- mapM varToExpr args
                       let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
                       let inpsAssign = zip (map fst clocksN) args'
@@ -272,12 +275,14 @@ genApplication dst f args =  do
           normalized <- isNormalizedBndr f
           if normalized
             then do
+              vCnt <- LabelM.gets nlVarCnt
               modu@(Module modName modInps [modOutps] _)  <- genModule f
+              LabelM.puts nlVarCnt vCnt
               let clocks = filter ((== ClockType) . snd) modInps
               let clocksN = filter ((/= ClockType) . snd) modInps
               if (length clocks + length args) == (length modInps)
                 then do
-                  let dstName = (varStringUniq dst)
+                  let dstName = (varString dst)
                   args' <- mapM varToExpr args
                   let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
                   let inpsAssign = zip (map fst clocksN) args'
@@ -316,7 +321,7 @@ builtinBuilders =
 genDelay :: BuiltinBuilder
 genDelay state args@[Var initS, clock, Var stateP] = do
   stateTy <- mkHType state
-  let [stateName,initSName,statePName] = map varStringUniq [state,initS,stateP]
+  let [stateName,initSName,statePName] = map varString [state,initS,stateP]
   (clockName,clockEdge) <- parseClock clock
   let resetName  = clockName ++ "Reset"
   let resetEvent = Event  (ExprVar resetName) AsyncLow
@@ -355,7 +360,7 @@ genFromInteger dst [_,arg] = do
 genShiftIntoL :: BuiltinBuilder
 genShiftIntoL dst [_,_,_,_,Var elArg,Var vecArg] = do
   dstType@(VecType len etype) <- mkHType vecArg
-  let [elName,vecName] = map varStringUniq [elArg,vecArg]
+  let [elName,vecName] = map varString [elArg,vecArg]
   let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 1)) (ExprLit Nothing $ ExprNum 1)])
   let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
   return (comment:assignExpr,[])
@@ -363,7 +368,7 @@ genShiftIntoL dst [_,_,_,_,Var elArg,Var vecArg] = do
 genVLast :: BuiltinBuilder
 genVLast dst [_,Var vecArg] = do
   dstType <- mkHType dst
-  let vecName = varStringUniq vecArg
+  let vecName = varString vecArg
   let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum 0))
   let comment = genComment dst "vlast" [Var vecArg]
   return (comment:selExpr,[])
@@ -371,15 +376,15 @@ genVLast dst [_,Var vecArg] = do
 genSingleton :: BuiltinBuilder
 genSingleton dst [Var eArg] = do
   dstType <- mkHType dst
-  let eName = varStringUniq eArg
-  let assignExpr = mkUncondAssign (dst,dstType) (ExprVar eName)
+  let eName = varString eArg
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprAll (ExprVar eName))
   let comment = genComment dst "singleton" [Var eArg]
   return (comment:assignExpr,[])
 
 genVCopy :: BuiltinBuilder
 genVCopy dst [_,Var eArg] = do
   dstType <- mkHType dst
-  let eName = varStringUniq eArg
+  let eName = varString eArg
   let assignExpr = mkUncondAssign (dst,dstType) (ExprAll (ExprVar eName))
   let comment = genComment dst "vcopy" [Var eArg]
   return (comment:assignExpr,[])
