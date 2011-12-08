@@ -13,12 +13,7 @@ import qualified Type
 
 -- Internal Modules
 import CLaSH.Util.CoreHW.Syntax (Term,Var)
-
-newtype OrdType = OrdType Type.Type
-instance Eq OrdType where
-  (OrdType a) == (OrdType b) = Type.eqType a b
-instance Ord OrdType where
-  compare (OrdType a) (OrdType b) = Type.cmpType a b
+import CLaSH.Util.CoreHW.Types  (OrdType)
 
 type Size = Int
 
@@ -107,7 +102,7 @@ data NetlistState = NetlistState
   , _nlTypeCnt    :: Integer
   , _nlMods       :: Map Var Module
   , _nlNormalized :: Map Var Term
-  , _nlTfpSyn     :: Map TyCon.TyCon Integer
+  , _nlTfpSyn     :: Map OrdType Integer
   }
 
 empytNetlistState = NetlistState empty 0 0 0 empty empty empty

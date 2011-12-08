@@ -324,7 +324,7 @@ collectArgs = go []
 
 getIntegerLiteral ::
   (Error.MonadError String m, State.MonadState s m, Functor m)
-  => s :-> (Map.Map TyCon.TyCon Integer)
+  => s :-> (Map.Map OrdType Integer)
   -> Term
   -> m Integer
 getIntegerLiteral tfpSynLens expr@(App _ _) =
@@ -354,11 +354,11 @@ filterLiterals e = case e of
 
 fromTfpInt ::
   (Error.MonadError String m, State.MonadState s m, Functor m)
-  => s :-> (Map TyCon Integer)
+  => s :-> (Map OrdType Integer)
   -> Type
   -> m Integer
 fromTfpInt tfpSynLens ty@(TyConApp tycon args) = case (isClosedSynTyCon tycon, null args) of
-  (True,True) -> makeCached tycon tfpSynLens $ do
+  (True,True) -> makeCached (OrdType ty) tfpSynLens $ do
     let tyconTy = synTyConType tycon
     fromTfpInt tfpSynLens tyconTy
   (True,False) -> do

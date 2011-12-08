@@ -5,6 +5,7 @@ module CLaSH.Util.CoreHW.Types
   , CoreBinding
   , TransformSession
   , TransformStep
+  , OrdType(..)
   , tsTransformCounter
   , tsUniqSupply
   , emptyTransformState
@@ -19,11 +20,18 @@ import qualified Data.Label.PureM as Label
 import Language.KURE              (RewriteM)
 
 -- GHC API
+import qualified Type
 import qualified VarEnv
 
 -- Internal Modules
 import CLaSH.Util                 (UniqSupply, MonadUnique(..), splitUniqSupply)
 import CLaSH.Util.CoreHW.Syntax   (Var, Term, TyVar)
+
+newtype OrdType = OrdType Type.Type
+instance Eq OrdType where
+  (OrdType a) == (OrdType b) = Type.eqType a b
+instance Ord OrdType where
+  compare (OrdType a) (OrdType b) = Type.cmpType a b
 
 type CoreBinding = (Var, Term)
 
