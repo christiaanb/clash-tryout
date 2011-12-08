@@ -29,6 +29,7 @@ module CLaSH.Util.CoreHW.Tools
   , mkLams
   , isVar
   , isCon
+  , isSimple
   , isPrimCon
   , isPrimFun
   , getIntegerLiteral
@@ -223,6 +224,14 @@ isVar ::
   -> Bool
 isVar (Var _) = True
 isVar _       = False
+
+isSimple ::
+  Term
+  -> Bool
+isSimple (Var _)     = True
+isSimple (App _ _)   = True
+isSimple (TyApp _ _) = True
+isSimple _           = False
 
 isCon ::
   Term

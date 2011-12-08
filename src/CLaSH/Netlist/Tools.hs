@@ -26,6 +26,8 @@ module CLaSH.Netlist.Tools
   , hasUntranslatableType
   , mkTempAssign
   , makeUnique
+  , appendToName
+  , mkTempVar
   )
 where
 
@@ -366,6 +368,12 @@ mkTempAssign hTy assignExpr = do
   t <- getAndModify nlVarCnt (+1)
   let dstName = "tmp_" ++ (show t)
   return (dstName, [NetDecl dstName hTy Nothing, NetAssign dstName assignExpr])
+
+mkTempVar :: Var -> NetlistSession Var
+mkTempVar v = do
+  t <- getAndModify nlVarCnt (+1)
+  let v' = appendToName v ("_tmp" ++ show t)
+  return v'
 
 makeUnique :: ([Var],[CoreBinding],Var) -> NetlistSession ([Var],[(Var,Term)],Var)
 makeUnique (args,binds,res) = do

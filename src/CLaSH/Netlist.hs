@@ -30,8 +30,8 @@ import qualified Var
 import CLaSH.Driver.Types (DriverSession)
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
-import CLaSH.Util (curLoc,makeCached)
-import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals)
+import CLaSH.Util (curLoc,makeCached,first,second)
+import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals, getType, mkApps)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -317,6 +317,8 @@ builtinBuilders =
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
   , ("vcopyn"             , (3, genVCopyn))
+  , ("vfoldl"             , (3, genVfoldl))
+  , ("vzipWith"           , (4, genVzipWith))
   ]
 
 genDelay :: BuiltinBuilder
@@ -392,3 +394,30 @@ genVCopy dst [_,Var eArg] = do
 
 genVCopyn :: BuiltinBuilder
 genVCopyn dst args = genVCopy dst (tail args)
+
+genVfoldl :: BuiltinBuilder
+genVfoldl dst [fArg,Var zArg,Var vArg] = do
+  vType@(VecType len etype) <- mkHType vArg
+  let comment  = genComment dst "vfoldl" [fArg,Var zArg, Var vArg]
+  let vIndexed = map (\i -> (:[]) . Left . Var $ appendToName vArg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
+  bndrs        <- mapM mkTempVar (replicate (len-1) dst)
+  let bndrs'   = map (Left . Var) (zArg:bndrs)
+  let vs       = zipWith (:) bndrs' vIndexed
+  let exprs    = map (mkApps fArg) vs
+  let tempDecls = map (\v -> NetDecl (varString v) etype Nothing) bndrs
+  (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip (bndrs++[dst]) exprs
+  return (comment:tempDecls ++ assigns,clks)
+
+genVzipWith :: BuiltinBuilder
+genVzipWith dst [_,fArg,Var v1Arg,Var v2Arg] = do
+  dstType@(VecType len etype) <- mkHType dst
+  let comment    = genComment dst "vzipWith" [fArg,Var v1Arg,Var v2Arg]
+  let v1Indexed  = map (\i -> Left . Var $ appendToName v1Arg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
+  let v2Indexed  = map (\i -> (:[]) . Left . Var $ appendToName v2Arg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
+  let vs         = zipWith (:) v1Indexed v2Indexed
+  let exprs      = map (mkApps fArg) vs
+  bndrs          <- mapM mkTempVar (replicate len dst)
+  let tempDelcs  = map (\v -> NetDecl (varString v) etype Nothing) bndrs
+  (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . varString) bndrs)
+  return (comment : tempDelcs ++ assigns ++ assignExpr,clks)

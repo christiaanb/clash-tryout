@@ -63,7 +63,7 @@ import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, partitionM, secondM, second)
-import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun)
+import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple)
 import CLaSH.Util.Pretty (pprString)
 
 iotaReduce :: NormalizeStep
@@ -213,9 +213,19 @@ typeSpec _ _ = fail "typeSpec"
 funcLift :: NormalizeStep
 funcLift ctx e
   | (Prim f, args) <- collectArgs e
-  , any (\a -> either isFun (const False) a && not (tyHasFreeTyVars . either getTypeFail id $ a)) args
+  , any (\a -> either (not . isSimple) (const False) a && either isFun (const False) a && not (tyHasFreeTyVars . either getTypeFail id $ a)) args
   = do
-    error $ pprString e
+    args' <- mapM doArg args
+    changed "funcLift" e (mkApps (Prim f) args')
+  where
+    doArg (Left arg) | not (isSimple arg) && isFun arg && not (hasFreeTyVars arg) = do
+      fvs <- liftQ $ localFreeVars arg
+      let body = mkLams fvs arg
+      argId <- liftQ $ mkBinderFor "fun" body
+      argId' <- liftQ $ mkFunction argId body
+      return $ Left $ mkApps (Var argId') (map (Left . Var) fvs)
+
+    doArg arg = return arg
 
 funcLift _ _ = fail "funcLift"
 
