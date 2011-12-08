@@ -4,16 +4,6 @@ module ALU where
 import CLaSH
 import Data.Tuple.HT
 
-dc = L
-
-program =
-  [ (H, L, H )
-  , (L, L, L )
-  , (L, H, dc)
-  , (H, L, H )
-  , (H, H, dc)
-  ]
-
 type Word = Unsigned D4
 
 type RegAddr = Bit
@@ -35,7 +25,7 @@ registerBank s (addr, we, d) = (s', o)
     o = case we of
       False -> case addr of L -> fst s; H -> snd s
       True  -> 0
-      
+
 data AluOp = Add | Sub
 alu Add = (+)
 alu Sub = (-)
@@ -43,7 +33,7 @@ alu Sub = (-)
 delayN s inp = (inp +>> s, vlast s)
 
 topEntity = proc (addr,we,op) -> do
-  rec (t,z) <- delayN ^^^ (singleton (0,0))       -< (t',z')
-      t'    <- registerBank ^^^ (0,1) -< (addr,we,z)
-      z'    <- arr (uncurry3 alu)     -< (op, t', t)
+  rec (t,z) <- delayN ^^^ (vcopyn d3 (0,0)) -< (t',z')
+      t'    <- registerBank ^^^ (0,1)       -< (addr,we,z)
+      z'    <- arr (uncurry3 alu)           -< (op, t', t)
   returnA -< t'
