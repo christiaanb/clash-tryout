@@ -319,6 +319,7 @@ builtinBuilders =
   , ("plusSigned"         , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
   , ("minSigned"          , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
   , ("timesSigned"        , (3, genTimes))
+  , ("negateSigned"       , (2, genNegate))
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("signedFromInteger"  , (2, genFromInteger))
   , ("+>>"                , (2, genShiftIntoL))
@@ -450,3 +451,11 @@ genTimes dst [_,arg1,arg2] = do
   [arg1',arg2'] <- mapM varToExpr [arg1,arg2]
   let comment = genComment dst "(*)" [arg1,arg2]
   return (comment:(mkUncondAssign (dst,dstType) (ExprFunCall "resize" [ExprBinary Times arg1' arg2',ExprLit Nothing $ ExprNum $ fromIntegral len])), [])
+
+genNegate :: BuiltinBuilder
+genNegate dst [_,arg] = do
+  dstType <- mkHType dst
+  arg'    <- varToExpr arg
+  case dstType of
+    SignedType _ -> genUnaryOperator "-" Neg dst [arg]
+    _            -> Error.throwError $ $(curLoc) ++ "Negation is not allowed for type: " ++ show dstType

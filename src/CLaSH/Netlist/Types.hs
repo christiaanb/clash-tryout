@@ -90,7 +90,7 @@ data Stmt = Assign LValue Expr
 
 type LValue = Expr
 
-data UnaryOp = LNeg
+data UnaryOp = LNeg | Neg
   deriving (Eq,Ord,Show)
 
 data BinaryOp = Plus | Minus | Times | Equals | NotEquals | And | Or | Xor

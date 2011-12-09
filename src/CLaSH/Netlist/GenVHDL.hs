@@ -226,6 +226,7 @@ lookupUnary op e = text (unOp op) <> parens e
 
 unOp :: UnaryOp -> String
 unOp LNeg = "not"
+unOp Neg  = "-"
 
 lookupBinary :: BinaryOp -> Doc -> Doc -> Doc
 lookupBinary op a b = parens $ a <+> text (binOp op) <+> b
