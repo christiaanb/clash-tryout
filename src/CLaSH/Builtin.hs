@@ -19,6 +19,9 @@ module CLaSH.Builtin
   , Component
   , component
   , (^^^)
+  , defaultClock
+  , run
+  , runWithDefault
   )
 where
 
@@ -27,6 +30,7 @@ import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),returnA)
 import Control.Category (Category,(.),id)
 import Control.Monad.Fix (mfix)
 import qualified Data.Set as Set
+import Debug.Trace (trace)
 import Language.Haskell.TH.Lift
 import Prelude hiding (id,(.))
 import qualified Prelude as P
@@ -94,4 +98,22 @@ component f initS clk = C { domain = Set.singleton clk
                           }
 {-# INLINE (^^^) #-}
 (^^^) :: (s -> i -> (s,o)) -> s -> Component i o
-f ^^^ initS = component f initS (ClockUp "defaultClock" 1)
+f ^^^ initS = component f initS defaultClock
+
+{-# INLINE defaultClock #-}
+defaultClock :: Clock
+defaultClock = ClockUp "defaultClock" 1
+
+run :: Component i o -> [(Clock,i)] -> [o]
+run (C _ hw) inps = go hw inps
+  where
+    go f []     = []
+    go f ((c,i):is) = let (o,C _ f') = f c i
+                      in o:(go f' is)
+
+runWithDefault :: Component i o -> [i] -> [o]
+runWithDefault c@(C clks _) =
+  if (Set.size clks) < 2 then
+    run c . zip (repeat defaultClock)
+  else
+    trace "== Warning ==\nRunning multi-clock design with only \"defaultClock\"\n" $ run c . zip (repeat defaultClock)
