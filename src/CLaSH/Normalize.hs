@@ -69,8 +69,8 @@ normalize' nonRepr (bndr:bndrs) = do
   case exprMaybe of
     Just expr -> do
       normalizable <- (assertNormalizable nonRepr expr) `Error.catchError`
-        (\e -> trace ( "\n=Warning=:\n" ++ $(curLoc) ++ "Expr belonging to binder '" ++ show bndr ++
-                       "', having type:\n\n" ++ show (getTypeFail expr) ++
+        (\e -> trace ( "\n== Warning ==\n" ++ $(curLoc) ++ "Expr belonging to binder '" ++ show bndr ++
+                       "', having type:\n\n" ++ pprString (getTypeFail expr) ++
                        "\n\nis not normalizable, because:\n" ++ e ++ "\n"
                      ) $ return False
         )
