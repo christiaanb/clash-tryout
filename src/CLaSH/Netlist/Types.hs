@@ -44,6 +44,7 @@ data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
           | ProcessDecl [(Event,Stmt)]
+          | ClockDecl   Ident Int
           | CommentDecl String
   deriving (Eq,Ord,Show)
 
@@ -69,6 +70,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprUnary   UnaryOp Expr
           | ExprBinary  BinaryOp Expr Expr
           | ExprFunCall Ident [Expr]
+          | ExprDelay   [(Expr,Int)]
   deriving (Eq,Ord,Show)
 
 data ExprLit = ExprNum       Integer

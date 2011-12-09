@@ -94,7 +94,7 @@ imports others = vcat
 
 entity :: Module -> Doc
 entity m = text "entity" <+> text (_modName m) <+> text "is" $$
-            nest 2 (text "port" <> parens (vcat $ punctuate semi ports) <> semi) $$
+            (case ports of [] -> text "" ; p -> nest 2 (text "port" <> parens (vcat $ punctuate semi p) <> semi)) $$
             text "end" <+> text "entity" <+> text (_modName m) <> semi
 
   where ports = [text i <+> colon <+> text "in" <+> slv_type ran | (i,ran) <- _modInputs m ] ++
@@ -157,6 +157,13 @@ inst _ (InstDecl nm inst gens ins outs) = Just $
 
 inst _ (CommentDecl msg) = Just $
 	(vcat [ text "--" <+> text m | m <- lines msg ])
+
+inst gensym (ClockDecl ident int) = Just $
+  text gensym <+> colon <+> text "process" $$
+  text "begin" $$
+  nest 2 (text "wait for" <+> text (show $ int `div` 2) <+> text "ns" <> semi $$
+          text ident <+> text "<= not" <+> text ident <> semi) $$
+  text "end process" <+> text gensym
 
 inst _ _d = Nothing
 

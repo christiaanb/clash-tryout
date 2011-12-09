@@ -37,18 +37,20 @@ import CLaSH.Util.Pretty         (pprString)
 normalize ::
   Map Var Term
   -- ^ Global binder cache
+  -> NetlistState
+  -- ^ Current netlist state
   -> Var
   -- ^ Bdnr to normalize
-  -> DriverSession ([(Var, Term)], NetlistState)
+  -> DriverSession (NetlistState, [(Var, Term)])
   -- ^ List of normalized binders, and netlist type state
-normalize globals bndr = do
+normalize globals nlState bndr = do
   uniqSupply <- LabelM.gets drUniqSupply
   ((retVal,tState),nState) <- State.liftIO $
       State.runStateT
         (State.runStateT
           (Error.runErrorT (normalize' False [bndr]))
           (emptyTransformState uniqSupply))
-        (emptyNormalizeState globals)
+        (emptyNormalizeState globals nlState)
   case retVal of
     Left  errMsg -> error errMsg
     Right normalized -> do
@@ -57,7 +59,7 @@ normalize globals bndr = do
       let netlistState    = Label.get nsNetlistState     nState
       LabelM.puts drUniqSupply uniqSupply'
       return $ trace ("Normalize transformations: " ++ show transformations)
-        (normalized,netlistState)
+        (netlistState,normalized)
 
 normalize' ::
   Bool
