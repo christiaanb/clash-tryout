@@ -30,8 +30,9 @@ module CLaSH.Normalize.Transformations
   , caseSimpl
   , caseRemove
   , appSimpl
-  , inlineUntranslatable
+  , bindUntranslatable
   , primSpec
+  , inlineUntranslatable
   )
 where
 
@@ -402,8 +403,8 @@ appSimpl ctx e@(App appf arg)
 
 appSimpl _ _ = fail "appSimpl"
 
-inlineUntranslatable :: NormalizeStep
-inlineUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
+bindUntranslatable :: NormalizeStep
+bindUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
 
 primSpec :: NormalizeStep
 primSpec ctx e@(App e1 e2)
@@ -424,3 +425,20 @@ primSpec ctx e@(App e1 e2)
           Nothing -> fail "primSpec"
 
 primSpec _ _ = fail "primSpec"
+
+inlineUntranslatable :: NormalizeStep
+inlineUntranslatable ctx e@(App e1 e2)
+  | (Prim _, _)   <- collectArgs e1
+  , (Var f, args) <- collectArgs e2
+  , not (isApplicable e2)
+  = do
+   untranslatable <- liftQ $ isUntranslatable f
+   bodyMaybe      <- liftQ $ getGlobalExpr f
+   case (untranslatable,bodyMaybe) of
+     (True,Just body) -> do
+       let newBody = mkApps body args
+       let newExpr = App e1 newBody
+       changed ("inlineUntranslatable: " ++ pprString (f,e2)) e newExpr
+     _ -> fail "inlineUntranslatable"
+
+inlineUntranslatable _ _ = fail "inlineUntranslatable"
