@@ -47,6 +47,8 @@ Library
                        CLaSH.Desugar.Transformations,
                        CLaSH.Desugar.Types,
                        CLaSH.Driver,
+                       CLaSH.Driver.PrepareBinding,
+                       CLaSH.Driver.TestbenchGen,
                        CLaSH.Driver.Tools,
                        CLaSH.Driver.Types,
                        CLaSH.Netlist,
