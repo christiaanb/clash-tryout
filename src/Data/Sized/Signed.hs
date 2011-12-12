@@ -129,11 +129,20 @@ minSigned ::
 minSigned a b = a + (negateSigned b)
 
 timesSigned ::
-  PositiveT nT
+  forall nT
+  . PositiveT nT
   => Signed nT
   -> Signed nT
   -> Signed nT
-timesSigned (Signed a) (Signed b) = signedFromInteger $ (a * b)
+timesSigned s1@(Signed a) s2@(Signed b)
+  | a * b > toInteger (maxBound :: Signed nT)
+  , (isNegative s1) `xnor` (isNegative s2) = signedFromInteger $ (a*b) B..&. (B.bit (fromIntegerT (undefined :: nT) - 1) - 1)
+  | a * b < (negate $ 1 `B.shiftL` (fromIntegerT (undefined :: nT) - 1)) = signedFromInteger $ (a * b)
+  | otherwise                                                            = signedFromInteger $ (a * b)
+  where
+    xnor False False = True
+    xnor True  True  = True
+    xnor _     _     = False
 
 negateSigned ::
   PositiveT nT
