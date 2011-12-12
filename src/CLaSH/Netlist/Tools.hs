@@ -241,7 +241,7 @@ isNormalizedBndr bndr = fmap (Map.member bndr) $ Label.gets nlNormalized
 htypeSize :: HWType -> Size
 htypeSize BitType                 = 1
 htypeSize BoolType                = 1
-htypeSize ClockType               = 1
+htypeSize (ClockType _)           = 1
 htypeSize IntegerType             = 32
 htypeSize (UnsignedType len)      = len
 htypeSize (SignedType len)        = len
@@ -349,7 +349,7 @@ toSLV t                 e = ExprFunCall (toSLVString t) [e]
 fromSLV :: HWType -> Expr -> Expr
 fromSLV BitType (ExprVar v)   = ExprIndex v (ExprLit Nothing $ ExprNum 0)
 fromSLV BoolType (ExprVar v)  = ExprIndex v (ExprLit Nothing $ ExprNum 0)
-fromSLV ClockType (ExprVar v) = ExprIndex v (ExprLit Nothing $ ExprNum 0)
+fromSLV (ClockType _) (ExprVar v) = ExprIndex v (ExprLit Nothing $ ExprNum 0)
 fromSLV (SumType _ _)     e   = e
 fromSLV (ProductType _ _) e   = e
 fromSLV (SPType _ _)      e   = e

@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module CLaSH.Driver.TestbenchGen where
 
 -- External Modules
@@ -12,12 +13,13 @@ import Data.Maybe
 import qualified CoreSyn
 import qualified FastString
 import qualified Id
+import qualified Type
 
 -- Internal Modules
 import CLaSH.Driver.PrepareBinding (prepareBinding)
 import CLaSH.Driver.Types
 import CLaSH.Netlist (genNetlist)
-import CLaSH.Netlist.Types (NetlistState,Module(..),HWType,Decl(..), Ident)
+import CLaSH.Netlist.Types
 import CLaSH.Normalize                (normalize)
 import CLaSH.Util (mapAccumLM,secondM)
 import CLaSH.Util.CoreHW (Term(..), Var, TypedThing(..), collectExprArgs, varString)
@@ -26,18 +28,36 @@ import CLaSH.Util.Pretty (pprString)
 genTestbench ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   -> NetlistState
-  -> Var -- ^ Input stimuli
-  -> Var -- ^ Top Entity
+  -> Var    -- ^ Input stimuli
+  -> Module -- ^ Top Entity
   -> DriverSession ([Module], [HWType])
-genTestbench globals nlState stimuli top = do
+genTestbench globals nlState stimuli (Module modName inps@[modInp,modClock,modReset] [modOutp] _) = do
   stimuli'  <- prepareBinding globals stimuli
   stimuli'' <- termToList (fromJust $ Map.lookup stimuli stimuli')
   stiNames  <- zipWithM (\s e -> Id.mkSysLocalM (FastString.mkFastString s) (getTypeFail e)) (map (("testInput" ++) . show) [0..]) stimuli''
   let stimuli3 = zip stiNames stimuli''
   (nlState',normalized) <- normalizedStimuli (stimuli' `Map.union` (Map.fromList stimuli3)) nlState stiNames
   (decls,signals,mods,hwtypes) <- createStimuli nlState' normalized
-  return ((Module "testbench" [] [] ((ClockDecl "defaultClock" 10):decls)):mods,hwtypes)
+  let topDecls = concatMap (genDecl (length signals)) [modInp,modClock,modReset,modOutp]
+  let (_,ClockType clockRate) = modClock
+  let inpAssign = NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (iterate (+(fromIntegral clockRate)) 0.0)
+  let instDecl  = InstDecl modName "totest" [] (map genPortAssign inps) (map genPortAssign [modOutp])
+  return ((Module "testbench" [] [] (instDecl:topDecls ++ inpAssign:decls)):mods,hwtypes)
 
+genTestbench _ _ _ (Module modName inps outps decls) = error $ "Don't know how to make testbench for: " ++ show (modName,inps,outps)
+
+genDecl :: Int -> (Ident,HWType) -> [Decl]
+genDecl n (ident,ClockType i) = [ NetDecl ident (ClockType i) (Just $ ExprLit Nothing (ExprBit L))
+                              , NetDecl "finished" BitType (Just $ ExprLit Nothing (ExprBit L))
+                              , ClockDecl ident i (ExprBinary Equals (ExprVar "finished") (ExprLit Nothing (ExprBit L)))
+                              , NetAssign "finished" $ ExprDelay [(ExprLit Nothing (ExprBit H), fromIntegral n)]
+                              ]
+genDecl _ (ident,ResetType i) = [ NetDecl   ident (ResetType i) (Just $ ExprLit Nothing (ExprBit L))
+                              , NetAssign "defaultClockReset" $ ExprDelay [(ExprLit Nothing (ExprBit L), 0.0),(ExprLit Nothing (ExprBit H), (fromIntegral i) / 4.0)]
+                              ]
+genDecl _ (ident,hwType)    = [ NetDecl ident hwType (Just $ ExprAll (ExprLit Nothing (ExprBit L)))]
+
+genPortAssign (ident,_) = (ident, ExprVar ident)
 
 termToList ::
   Term

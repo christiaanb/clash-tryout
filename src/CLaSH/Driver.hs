@@ -48,8 +48,8 @@ generateVHDL modName = do
         let globalBindings = Map.fromList allBindings
         coreHWBindings            <- prepareBinding globalBindings topEntity
         (netlistState,normalized) <- normalize coreHWBindings empytNetlistState topEntity
-        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (fst $ head testInputs) topEntity
         (netlist, elTypes)        <- genNetlist   netlistState    normalized topEntity
+        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (fst $ head testInputs) (head netlist)
         let usedTypes             = List.nub (tbTypes ++ elTypes)
         let (elTypesV,elTypesP)   = case usedTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
         let vhdl                  = map (genVHDL elTypesP) (netlist ++ testbench)

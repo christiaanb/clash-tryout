@@ -158,12 +158,8 @@ inst _ (InstDecl nm inst gens ins outs) = Just $
 inst _ (CommentDecl msg) = Just $
 	(vcat [ text "--" <+> text m | m <- lines msg ])
 
-inst gensym (ClockDecl ident int) = Just $
-  text gensym <+> colon <+> text "process" $$
-  text "begin" $$
-  nest 2 (text "wait for" <+> text (show $ int `div` 2) <+> text "ns" <> semi $$
-          text ident <+> text "<= not" <+> text ident <> semi) $$
-  text "end process" <+> text gensym
+inst _ (ClockDecl ident int e) = Just $
+  text ident <+> text "<= not" <+> text ident <+> text "after" <+> text (show $ (fromIntegral int) / 2.0) <+> text "ns when" <+> expr e
 
 inst _ _d = Nothing
 
@@ -220,6 +216,9 @@ expr (ExprCase _ [] (Just e)) = expr e
 expr (ExprCase e (([],_):alts) def) = expr (ExprCase e alts def)
 expr (ExprCase e ((p:ps,alt):alts) def) =
 	expr (ExprCond (ExprBinary Equals e p) alt (ExprCase e ((ps,alt):alts) def))
+expr (ExprDelay [])         = error "delay expression should have atleast one value"
+expr (ExprDelay [(e,n)])    = (expr e) <+> text "after" <+> text (show n) <+> text "ns"
+expr (ExprDelay ((e,n):es)) = (expr e) <+> text "after" <+> text (show n) <+> text "ns" <> comma $$ (expr (ExprDelay es))
 
 lookupUnary :: UnaryOp -> Doc -> Doc
 lookupUnary op e = text (unOp op) <> parens e
@@ -241,17 +240,19 @@ binOp Minus = "-"
 binOp Times = "*"
 
 mkSensitivityList :: Decl -> [Expr]
-mkSensitivityList (ProcessDecl evs) = nub event_names
+mkSensitivityList (ProcessDecl evs) = nub $ concat event_names
   where event_names =
-		map (\ (e,_) -> case e of
-				 Event (ExprVar name) _ -> ExprVar name
-				 _ -> error $ "strange form for mkSensitivityList " ++ show e
+		map (\e -> case e of
+                (Event (ExprVar name) AsyncLow, Assign _ (ExprVar name')) -> [ExprVar name, ExprVar name'];
+      				  (Event (ExprVar name) _, _)                    -> [ExprVar name];
+      				  _                                              -> error $ "strange form for mkSensitivityList " ++ show e
 		    ) evs
 
 tyName :: HWType -> String
 tyName BitType             = "std_logic"
 tyName BoolType            = "std_logic"
-tyName ClockType           = "std_logic"
+tyName (ClockType _)       = "std_logic"
+tyName (ResetType _)       = "std_logic"
 tyName (UnsignedType len)  = "unsigned" ++ show len
 tyName (SignedType len)    = "signed" ++ show len
 tyName (VecType _ e)       = vecTyName e
@@ -264,7 +265,8 @@ vecTyName e = (tyName e) ++ "_vector"
 slv_type :: HWType -> Doc
 slv_type BitType                  = text "std_logic"
 slv_type BoolType                 = text "std_logic"
-slv_type ClockType                = text "std_logic"
+slv_type (ClockType _)            = text "std_logic"
+slv_type (ResetType _)            = text "std_logic"
 slv_type (UnsignedType len)       = text "unsigned" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type (SignedType len)         = text "signed" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(VecType s e)     = text (tyName hwtype) <> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0)

@@ -27,7 +27,8 @@ data HWType = BitType
             | SumType     String [String]
             | ProductType String [HWType]
             | SPType      String [(String,[HWType])]
-            | ClockType
+            | ClockType Integer
+            | ResetType Integer
             | Invalid String
   deriving (Eq,Ord,Show)
 
@@ -44,7 +45,7 @@ data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
           | ProcessDecl [(Event,Stmt)]
-          | ClockDecl   Ident Int
+          | ClockDecl   Ident Integer Expr
           | CommentDecl String
   deriving (Eq,Ord,Show)
 
@@ -70,7 +71,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprUnary   UnaryOp Expr
           | ExprBinary  BinaryOp Expr Expr
           | ExprFunCall Ident [Expr]
-          | ExprDelay   [(Expr,Int)]
+          | ExprDelay   [(Expr,Float)]
   deriving (Eq,Ord,Show)
 
 data ExprLit = ExprNum       Integer

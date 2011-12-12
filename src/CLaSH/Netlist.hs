@@ -260,8 +260,7 @@ genApplication dst f args =  do
                   vCnt <- LabelM.gets nlVarCnt
                   modu@(Module modName modInps (modOutps:_) _)  <- genModule f
                   LabelM.puts nlVarCnt vCnt
-                  let clocks = filter ((== ClockType) . snd) modInps
-                  let clocksN = filter ((/= ClockType) . snd) modInps
+                  let (clocks,clocksN)  = List.partition ((\a -> case a of (ClockType _) -> True; ResetType _ -> True; _ -> False) . snd) modInps
                   if (length clocks + length args) == (length modInps)
                     then do
                       let dstName = (varString dst)
@@ -283,8 +282,7 @@ genApplication dst f args =  do
               vCnt <- LabelM.gets nlVarCnt
               modu@(Module modName modInps [modOutps] _)  <- genModule f
               LabelM.puts nlVarCnt vCnt
-              let clocks = filter ((== ClockType) . snd) modInps
-              let clocksN = filter ((/= ClockType) . snd) modInps
+              let (clocks,clocksN)  = List.partition ((\a -> case a of ClockType _ -> True; ResetType _ -> True; _ -> False) . snd) modInps
               if (length clocks + length args) == (length modInps)
                 then do
                   let dstName = (varString dst)
@@ -338,7 +336,7 @@ genDelay :: BuiltinBuilder
 genDelay state args@[Var initS, clock, Var stateP] = do
   stateTy <- mkHType state
   let [stateName,initSName,statePName] = map varString [state,initS,stateP]
-  (clockName,clockEdge) <- parseClock clock
+  (clockName,clockPeriod,clockEdge) <- parseClock clock
   let resetName  = clockName ++ "Reset"
   let resetEvent = Event  (ExprVar resetName) AsyncLow
   let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
