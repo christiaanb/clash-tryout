@@ -376,7 +376,9 @@ genFromInteger dst [_,arg] = do
         UnsignedType len -> if len < 32 then
             return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
           else do
-            return $ mkUncondAssign (dst,dstType) (ExprFunCall "unsigned" [ExprLit (Just len) $ ExprNum lit])
+            (tempVar, tempExpr) <- mkTempAssign (SignedType len) (ExprLit (Just len) $ ExprNum lit)
+            let assignment = mkUncondAssign (dst,dstType) (ExprFunCall "unsigned" [ExprVar tempVar])
+            return (tempExpr ++ assignment)
         SignedType   len -> if len < 32 then
             return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
           else do
