@@ -344,31 +344,45 @@ genDelay state args@[Var initS, clock, Var stateP] = do
   let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
   let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
   let comment    = genComment state "delay" args
-  return $ ([comment,register],[(clockName,ClockType),(resetName,ClockType)])
+  return $ ([comment,register],[(clockName,ClockType clockPeriod),(resetName,ResetType clockPeriod)])
 
 parseClock ::
   Term
-  -> NetlistSession (Ident,Edge)
+  -> NetlistSession (Ident,Integer,Edge)
 parseClock clock = do
   case clock of
     (App _ _) -> do
-      let (Data clockDataCon, [clockNameCString,_]) = collectExprArgs clock
+      let (Data clockDataCon, [clockNameCString,clockPeriod]) = collectExprArgs clock
       clockFS <- case (filterLiterals clockNameCString) of
             [(Literal.MachStr fs)] -> return fs
             _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
+      clockPeriod <- case (filterLiterals clockPeriod) of
+            [Literal.MachInt    integer] -> return integer
+            [Literal.MachInt64  integer] -> return integer
+            [Literal.MachWord   integer] -> return integer
+            [Literal.MachWord64 integer] -> return integer
+            _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
       let clockName = FastString.unpackFS clockFS
       case (Name.getOccString clockDataCon) of
-        "ClockUp"   -> return (clockName,PosEdge)
-        "ClockDown" -> return (clockName,NegEdge)
+        "ClockUp"   -> return (clockName,clockPeriod,PosEdge)
+        "ClockDown" -> return (clockName,clockPeriod,NegEdge)
     _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
 
 genFromInteger :: BuiltinBuilder
 genFromInteger dst [_,arg] = do
   lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
-  let litExpr = case dstType of
-        UnsignedType len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
-        SignedType   len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+  litExpr <- case dstType of
+        UnsignedType len -> if len < 32 then
+            return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+          else do
+            return $ mkUncondAssign (dst,dstType) (ExprFunCall "unsigned" [ExprLit (Just len) $ ExprNum lit])
+        SignedType   len -> if len < 32 then
+            return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+          else do
+            (tempVar, tempExpr) <- mkTempAssign (SignedType len) (ExprLit (Just len) $ ExprNum lit)
+            let assignment = mkUncondAssign (dst,dstType) (ExprFunCall "signed" [ExprVar tempVar])
+            return (tempExpr ++ assignment)
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
 
