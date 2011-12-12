@@ -410,7 +410,7 @@ appSimpl ctx e@(App appf arg)
 appSimpl _ _ = fail "appSimpl"
 
 bindUntranslatable :: NormalizeStep
-bindUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
+bindUntranslatable = inlineBind ("bindUntranslatable") (isUntranslatable . fst)
 
 primSpec :: NormalizeStep
 primSpec ctx e@(App e1 e2)
