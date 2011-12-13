@@ -14,3 +14,6 @@ topEntity = (fir hs) ^^^ initFir
   where
     hs      = $(vTH [2,3,-2,(8::Word)])
     initFir = vcopyn d4 0
+
+testInput      = [2,3,-2,(8::Word)]
+expectedOutput = [4,12,1,(20::Word)]

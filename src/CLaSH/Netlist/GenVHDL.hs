@@ -6,6 +6,7 @@ where
 
 -- External Modules
 import Text.PrettyPrint
+import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (nub)
 
@@ -87,6 +88,7 @@ imports others = vcat
   [ text "library IEEE" <> semi
   , text "use IEEE.STD_LOGIC_1164.ALL" <> semi
   , text "use IEEE.NUMERIC_STD.ALL" <> semi
+  , text "use STD.TEXTIO.ALL" <> semi
   ] $$ vcat [
       text ("use " ++ other) <> semi
     | other <- others
@@ -138,9 +140,9 @@ inst _ (NetAssign i e) = Just $ text i <+> text "<=" <+> expr e
 inst gensym proc@(ProcessDecl evs) = Just $
     text gensym <+> colon <+> text "process" <> senlist <+> text "is" $$
     text "begin" $$
-    nest 2 (pstmts evs) $$
+    nest 2 (case evs of Left evs' -> pstmts evs'; Right stmts -> vcat (map stmt stmts)) $$
     text "end process" <+> text gensym
-  where senlist = parens $ cat $ punctuate comma $ map expr $   mkSensitivityList proc
+  where senlist = either (\_ -> parens $ cat $ punctuate comma $ map expr $ mkSensitivityList proc) (\_ -> text "") evs
 
 inst _ (InstDecl nm inst gens ins outs) = Just $
   text inst <+> colon <+> text "entity" <+> text nm $$
@@ -177,6 +179,10 @@ event (Event i AsyncLow)  = expr i <+> text "= '0'"
 
 stmt :: Stmt -> Doc
 stmt (Assign l r) = expr l <+> text "<=" <+> expr r <> semi
+stmt (Seq ss) = vcat (map stmt ss)
+stmt (Wait Nothing) = text "wait" <> semi
+stmt (Wait (Just t)) = text "wait for" <+> text (show t) <+> text "ns" <> semi
+stmt (Assert e i1 i2) = text "assert" <+> (expr e) <+> text "report" <+> parens (text "\"expected: \" &" <+> (expr i2) <+> text "& \", actual: \" &" <+> (expr i1)) <+> text "severity error" <> semi
 
 to_bits :: Integral a => Int -> a -> [Bit]
 to_bits size val = map (\x -> if odd x then H else L)
@@ -240,7 +246,7 @@ binOp Minus = "-"
 binOp Times = "*"
 
 mkSensitivityList :: Decl -> [Expr]
-mkSensitivityList (ProcessDecl evs) = nub $ concat event_names
+mkSensitivityList (ProcessDecl (Left evs)) = nub $ concat event_names
   where event_names =
 		map (\e -> case e of
                 (Event (ExprVar name) AsyncLow, Assign _ (ExprVar name')) -> [ExprVar name, ExprVar name'];

@@ -42,14 +42,15 @@ generateVHDL modName = do
     let allBindings = concatMap (CoreSyn.flattenBinds . HscTypes.mg_binds) coreModGuts
     let topEntities = filter (isTopEntity . fst) allBindings
     let testInputs  = filter (isTestInput . fst) allBindings
+    let expectedOutputs = filter (isExpectedOutput . fst) allBindings
     case topEntities of
       [topEntity'] -> do
         let topEntity = fst topEntity'
         let globalBindings = Map.fromList allBindings
         coreHWBindings            <- prepareBinding globalBindings topEntity
         (netlistState,normalized) <- normalize coreHWBindings empytNetlistState topEntity
-        (netlist, elTypes)        <- genNetlist   netlistState    normalized topEntity
-        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (fst $ head testInputs) (head netlist)
+        (netlist, elTypes,_)      <- genNetlist   netlistState    normalized topEntity Nothing
+        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (fst $ head testInputs) (fst $ head expectedOutputs) (head netlist)
         let usedTypes             = List.nub (tbTypes ++ elTypes)
         let (elTypesV,elTypesP)   = case usedTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
         let vhdl                  = map (genVHDL elTypesP) (netlist ++ testbench)

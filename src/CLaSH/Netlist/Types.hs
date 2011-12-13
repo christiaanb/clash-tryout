@@ -44,7 +44,7 @@ data Module = Module {
 data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
-          | ProcessDecl [(Event,Stmt)]
+          | ProcessDecl (Either [(Event,Stmt)] [Stmt])
           | ClockDecl   Ident Integer Expr
           | CommentDecl String
   deriving (Eq,Ord,Show)
@@ -87,6 +87,8 @@ data Stmt = Assign LValue Expr
           | CaseSt Expr [([Expr],Stmt)] (Maybe Stmt)
           | Seq [Stmt]
           | FunCallStmt Ident [Expr]
+          | Assert Expr Expr Expr
+          | Wait (Maybe Float)
   deriving (Eq,Ord,Show)
 
 type LValue = Expr

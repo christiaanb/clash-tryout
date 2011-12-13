@@ -3,6 +3,7 @@
 module CLaSH.Driver.Tools
   ( isTopEntity
   , isTestInput
+  , isExpectedOutput
   , getGlobalExpr
   , addGlobalBind
   )
@@ -42,6 +43,12 @@ isTestInput ::
   -> Bool
 isTestInput bind =
   "testInput" == (Name.occNameString . Name.nameOccName . Name.getName) bind
+
+isExpectedOutput ::
+  Var.Var
+  -> Bool
+isExpectedOutput bind =
+  "expectedOutput" == (Name.occNameString . Name.nameOccName . Name.getName) bind
 
 getGlobalExpr ::
   (State.MonadState s m, Error.MonadIO m, Functor m)

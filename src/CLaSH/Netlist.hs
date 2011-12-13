@@ -12,6 +12,7 @@ import qualified Data.Label as Label
 import qualified Data.Label.PureM as LabelM
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 
 import Debug.Trace
 
@@ -38,38 +39,42 @@ genNetlist ::
   NetlistState
   -> [(Var, Term)]
   -> Var
-  -> DriverSession ([Module], [HWType])
-genNetlist nlState normalized topEntity = do
-  let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity)) (nlState { _nlNormalized = Map.fromList normalized })
+  -> Maybe Integer
+  -> DriverSession ([Module], [HWType], NetlistState)
+genNetlist nlState normalized topEntity mStart = do
+  let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity mStart)) (nlState { _nlNormalized = Map.fromList normalized })
   case retVal of
     Left errMsg   -> error errMsg
     Right netlist -> do
       let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType && e /= BoolType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
-      return (netlist,elTypes)
+      return (netlist,elTypes,nlState')
 
 genModules ::
   Var
+  -> Maybe Integer
   -> NetlistSession [Module]
-genModules topEntity = do
-  topMod <- genModule topEntity
+genModules topEntity mStart = do
+  topMod <- genModule topEntity mStart
   allMods <- LabelM.gets nlMods
   return $ map snd $ Map.toList allMods
 
 genModule ::
   Var
+  -> Maybe Integer
   -> NetlistSession Module
-genModule modName = do
+genModule modName mStart = do
   modExprMaybe <- fmap (Map.lookup modName) $ LabelM.gets nlNormalized
   case modExprMaybe of
     Nothing      -> Error.throwError $ $(curLoc) ++ "No normalized expr for bndr: " ++ (show modName)
-    Just modExpr -> makeCached modName nlMods $ genModule' modName modExpr
+    Just modExpr -> makeCached modName nlMods $ genModule' modName modExpr mStart
 
 genModule' ::
   Var
   -> Term
+  -> Maybe Integer
   -> NetlistSession Module
-genModule' modName modExpr = do
-  LabelM.puts nlVarCnt 0
+genModule' modName modExpr mStart = do
+  LabelM.puts nlVarCnt (Maybe.fromMaybe 0 mStart)
   (args,binds,res)       <- (\m -> splitNormalized m >>= makeUnique) modExpr
   (resType:argTypes)     <- mapM mkHType (res:args)
   let (resName:argNames) = map varString (res:args)
@@ -258,7 +263,7 @@ genApplication dst f args =  do
               if normalized
                 then do
                   vCnt <- LabelM.gets nlVarCnt
-                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f
+                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f Nothing
                   LabelM.puts nlVarCnt vCnt
                   let (clocks,clocksN)  = List.partition ((\a -> case a of (ClockType _) -> True; ResetType _ -> True; _ -> False) . snd) modInps
                   if (length clocks + length args) == (length modInps)
@@ -280,7 +285,7 @@ genApplication dst f args =  do
           if normalized
             then do
               vCnt <- LabelM.gets nlVarCnt
-              modu@(Module modName modInps [modOutps] _)  <- genModule f
+              modu@(Module modName modInps [modOutps] _)  <- genModule f Nothing
               LabelM.puts nlVarCnt vCnt
               let (clocks,clocksN)  = List.partition ((\a -> case a of ClockType _ -> True; ResetType _ -> True; _ -> False) . snd) modInps
               if (length clocks + length args) == (length modInps)
@@ -342,7 +347,7 @@ genDelay state args@[Var initS, clock, Var stateP] = do
   let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
   let clockEvent = Event  (ExprVar clockName) clockEdge
   let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
-  let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
+  let register   = ProcessDecl $ Left [(resetEvent,resetStmt),(clockEvent,clockStmt)]
   let comment    = genComment state "delay" args
   return $ ([comment,register],[(clockName,ClockType clockPeriod),(resetName,ResetType clockPeriod)])
 
