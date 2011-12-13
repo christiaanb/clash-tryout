@@ -228,5 +228,5 @@ changed ::
 changed tId prevTerm expr = do
   liftQ $ Label.modify C.tsTransformCounter (+1)
   --trace ("\n" ++ tId ++ "(before):\n" ++ pprString prevTerm ++ "\n\n" ++ tId ++ "(after):\n" ++ pprString expr) $ markM $ return expr
-  trace tId $ markM $ return expr
-  --markM $ return expr
+  --trace tId $ markM $ return expr
+  markM $ return expr
