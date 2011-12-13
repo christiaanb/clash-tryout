@@ -40,8 +40,9 @@ Data.Label.mkLabels [''NormalizeState]
 -- | Create an empty state for the normalization session
 emptyNormalizeState ::
   Map Var Term -- ^ Cache of global binders
+  -> NetlistState -- ^ Current netlist state
   -> NormalizeState
-emptyNormalizeState bindings = NormalizeState empty bindings empytNetlistState
+emptyNormalizeState bindings nlState = NormalizeState empty bindings nlState
 
 -- | The normalization session is a transformation session with extra state
 -- to cache information on already normalized binders. Needs IO to load

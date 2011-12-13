@@ -27,7 +27,8 @@ data HWType = BitType
             | SumType     String [String]
             | ProductType String [HWType]
             | SPType      String [(String,[HWType])]
-            | ClockType
+            | ClockType Integer
+            | ResetType Integer
             | Invalid String
   deriving (Eq,Ord,Show)
 
@@ -43,7 +44,8 @@ data Module = Module {
 data Decl = NetDecl     Ident HWType (Maybe Expr)
           | NetAssign   Ident Expr
           | InstDecl    Ident Ident [(Ident,Expr)] [(Ident,Expr)] [(Ident,Expr)]
-          | ProcessDecl [(Event,Stmt)]
+          | ProcessDecl (Either [(Event,Stmt)] [Stmt])
+          | ClockDecl   Ident Integer Expr
           | CommentDecl String
   deriving (Eq,Ord,Show)
 
@@ -69,6 +71,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
           | ExprUnary   UnaryOp Expr
           | ExprBinary  BinaryOp Expr Expr
           | ExprFunCall Ident [Expr]
+          | ExprDelay   [(Expr,Float)]
   deriving (Eq,Ord,Show)
 
 data ExprLit = ExprNum       Integer
@@ -84,11 +87,13 @@ data Stmt = Assign LValue Expr
           | CaseSt Expr [([Expr],Stmt)] (Maybe Stmt)
           | Seq [Stmt]
           | FunCallStmt Ident [Expr]
+          | Assert Expr Expr Expr
+          | Wait (Maybe Float)
   deriving (Eq,Ord,Show)
 
 type LValue = Expr
 
-data UnaryOp = LNeg
+data UnaryOp = LNeg | Neg
   deriving (Eq,Ord,Show)
 
 data BinaryOp = Plus | Minus | Times | Equals | NotEquals | And | Or | Xor

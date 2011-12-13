@@ -12,6 +12,7 @@ import qualified Data.Label as Label
 import qualified Data.Label.PureM as LabelM
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 
 import Debug.Trace
 
@@ -38,38 +39,42 @@ genNetlist ::
   NetlistState
   -> [(Var, Term)]
   -> Var
-  -> DriverSession ([Module], [HWType])
-genNetlist nlState normalized topEntity = do
-  let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity)) (nlState { _nlNormalized = Map.fromList normalized })
+  -> Maybe Integer
+  -> DriverSession ([Module], [HWType], NetlistState)
+genNetlist nlState normalized topEntity mStart = do
+  let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity mStart)) (nlState { _nlNormalized = Map.fromList normalized })
   case retVal of
     Left errMsg   -> error errMsg
     Right netlist -> do
       let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType && e /= BoolType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
-      return (netlist,elTypes)
+      return (netlist,elTypes,nlState')
 
 genModules ::
   Var
+  -> Maybe Integer
   -> NetlistSession [Module]
-genModules topEntity = do
-  topMod <- genModule topEntity
+genModules topEntity mStart = do
+  topMod <- genModule topEntity mStart
   allMods <- LabelM.gets nlMods
   return $ map snd $ Map.toList allMods
 
 genModule ::
   Var
+  -> Maybe Integer
   -> NetlistSession Module
-genModule modName = do
+genModule modName mStart = do
   modExprMaybe <- fmap (Map.lookup modName) $ LabelM.gets nlNormalized
   case modExprMaybe of
     Nothing      -> Error.throwError $ $(curLoc) ++ "No normalized expr for bndr: " ++ (show modName)
-    Just modExpr -> makeCached modName nlMods $ genModule' modName modExpr
+    Just modExpr -> makeCached modName nlMods $ genModule' modName modExpr mStart
 
 genModule' ::
   Var
   -> Term
+  -> Maybe Integer
   -> NetlistSession Module
-genModule' modName modExpr = do
-  LabelM.puts nlVarCnt 0
+genModule' modName modExpr mStart = do
+  LabelM.puts nlVarCnt (Maybe.fromMaybe 0 mStart)
   (args,binds,res)       <- (\m -> splitNormalized m >>= makeUnique) modExpr
   (resType:argTypes)     <- mapM mkHType (res:args)
   let (resName:argNames) = map varString (res:args)
@@ -258,10 +263,9 @@ genApplication dst f args =  do
               if normalized
                 then do
                   vCnt <- LabelM.gets nlVarCnt
-                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f
+                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f Nothing
                   LabelM.puts nlVarCnt vCnt
-                  let clocks = filter ((== ClockType) . snd) modInps
-                  let clocksN = filter ((/= ClockType) . snd) modInps
+                  let (clocks,clocksN)  = List.partition ((\a -> case a of (ClockType _) -> True; ResetType _ -> True; _ -> False) . snd) modInps
                   if (length clocks + length args) == (length modInps)
                     then do
                       let dstName = (varString dst)
@@ -281,10 +285,9 @@ genApplication dst f args =  do
           if normalized
             then do
               vCnt <- LabelM.gets nlVarCnt
-              modu@(Module modName modInps [modOutps] _)  <- genModule f
+              modu@(Module modName modInps [modOutps] _)  <- genModule f Nothing
               LabelM.puts nlVarCnt vCnt
-              let clocks = filter ((== ClockType) . snd) modInps
-              let clocksN = filter ((/= ClockType) . snd) modInps
+              let (clocks,clocksN)  = List.partition ((\a -> case a of ClockType _ -> True; ResetType _ -> True; _ -> False) . snd) modInps
               if (length clocks + length args) == (length modInps)
                 then do
                   let dstName = (varString dst)
@@ -319,6 +322,7 @@ builtinBuilders =
   , ("plusSigned"         , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
   , ("minSigned"          , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
   , ("timesSigned"        , (3, genTimes))
+  , ("negateSigned"       , (2, genNegate))
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("signedFromInteger"  , (2, genFromInteger))
   , ("+>>"                , (2, genShiftIntoL))
@@ -337,39 +341,55 @@ genDelay :: BuiltinBuilder
 genDelay state args@[Var initS, clock, Var stateP] = do
   stateTy <- mkHType state
   let [stateName,initSName,statePName] = map varString [state,initS,stateP]
-  (clockName,clockEdge) <- parseClock clock
+  (clockName,clockPeriod,clockEdge) <- parseClock clock
   let resetName  = clockName ++ "Reset"
   let resetEvent = Event  (ExprVar resetName) AsyncLow
   let resetStmt  = Assign (ExprVar stateName) (ExprVar initSName)
   let clockEvent = Event  (ExprVar clockName) clockEdge
   let clockStmt  = Assign (ExprVar stateName) (ExprVar statePName)
-  let register   = ProcessDecl [(resetEvent,resetStmt),(clockEvent,clockStmt)]
+  let register   = ProcessDecl $ Left [(resetEvent,resetStmt),(clockEvent,clockStmt)]
   let comment    = genComment state "delay" args
-  return $ ([comment,register],[(clockName,ClockType),(resetName,ClockType)])
+  return $ ([comment,register],[(clockName,ClockType clockPeriod),(resetName,ResetType clockPeriod)])
 
 parseClock ::
   Term
-  -> NetlistSession (Ident,Edge)
+  -> NetlistSession (Ident,Integer,Edge)
 parseClock clock = do
   case clock of
     (App _ _) -> do
-      let (Data clockDataCon, [clockNameCString,_]) = collectExprArgs clock
+      let (Data clockDataCon, [clockNameCString,clockPeriod]) = collectExprArgs clock
       clockFS <- case (filterLiterals clockNameCString) of
             [(Literal.MachStr fs)] -> return fs
             _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
+      clockPeriod <- case (filterLiterals clockPeriod) of
+            [Literal.MachInt    integer] -> return integer
+            [Literal.MachInt64  integer] -> return integer
+            [Literal.MachWord   integer] -> return integer
+            [Literal.MachWord64 integer] -> return integer
+            _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
       let clockName = FastString.unpackFS clockFS
       case (Name.getOccString clockDataCon) of
-        "ClockUp"   -> return (clockName,PosEdge)
-        "ClockDown" -> return (clockName,NegEdge)
+        "ClockUp"   -> return (clockName,clockPeriod,PosEdge)
+        "ClockDown" -> return (clockName,clockPeriod,NegEdge)
     _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
 
 genFromInteger :: BuiltinBuilder
 genFromInteger dst [_,arg] = do
   lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
-  let litExpr = case dstType of
-        UnsignedType len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
-        SignedType   len -> mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+  litExpr <- case dstType of
+        UnsignedType len -> if len < 32 then
+            return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_unsigned" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+          else do
+            (tempVar, tempExpr) <- mkTempAssign (SignedType len) (ExprLit (Just len) $ ExprNum lit)
+            let assignment = mkUncondAssign (dst,dstType) (ExprFunCall "unsigned" [ExprVar tempVar])
+            return (tempExpr ++ assignment)
+        SignedType   len -> if len < 32 then
+            return $ mkUncondAssign (dst,dstType) (ExprFunCall "to_signed" [ExprLit Nothing $ ExprNum lit,ExprLit Nothing $ ExprNum $ toInteger len])
+          else do
+            (tempVar, tempExpr) <- mkTempAssign (SignedType len) (ExprLit (Just len) $ ExprNum lit)
+            let assignment = mkUncondAssign (dst,dstType) (ExprFunCall "signed" [ExprVar tempVar])
+            return (tempExpr ++ assignment)
   let comment = genComment dst "fromInteger" [arg]
   return (comment:litExpr,[])
 
@@ -450,3 +470,11 @@ genTimes dst [_,arg1,arg2] = do
   [arg1',arg2'] <- mapM varToExpr [arg1,arg2]
   let comment = genComment dst "(*)" [arg1,arg2]
   return (comment:(mkUncondAssign (dst,dstType) (ExprFunCall "resize" [ExprBinary Times arg1' arg2',ExprLit Nothing $ ExprNum $ fromIntegral len])), [])
+
+genNegate :: BuiltinBuilder
+genNegate dst [_,arg] = do
+  dstType <- mkHType dst
+  arg'    <- varToExpr arg
+  case dstType of
+    SignedType _ -> genUnaryOperator "-" Neg dst [arg]
+    _            -> Error.throwError $ $(curLoc) ++ "Negation is not allowed for type: " ++ show dstType

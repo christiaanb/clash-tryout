@@ -247,7 +247,8 @@ classopresolution _ _ = fail "classopresolution"
 retLam :: NormalizeStep
 retLam ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet expr) = do
   localVar <- liftQ $ isLocalVar expr
-  case localVar of
+  untranslatable <- liftQ $ isUntranslatable expr
+  case localVar || untranslatable of
     False -> do
       resId <- liftQ $ mkBinderFor "res" expr
       changed "retLam" expr $ LetRec [(resId, expr)] (Var resId)
@@ -259,7 +260,8 @@ retLam _ _ = fail "retLam"
 retLet :: NormalizeStep
 retLet ctx expr@(LetRec binds body) | all isLambdaBodyCtx ctx = do
   localVar <- liftQ $ isLocalVar body
-  case localVar of
+  untranslatable <- liftQ $ isUntranslatable body
+  case localVar || untranslatable of
     False -> do
       resId <- liftQ $ mkBinderFor "res" body
       changed "retLet" expr $ LetRec ((resId,body):binds) (Var resId)
@@ -313,8 +315,9 @@ deadCode _ _ = fail "deadCode"
 
 scrutSimpl :: NormalizeStep
 scrutSimpl c expr@(Case scrut ty alts) = do
-  localVar <- liftQ $ isLocalVar scrut
-  case localVar of
+  localVar       <- liftQ $ isLocalVar scrut
+  untranslatable <- liftQ $ isUntranslatable scrut
+  case localVar || untranslatable of
     False -> do
       scrutId <- liftQ $ mkBinderFor "scrut" scrut
       changed "scrutSimpl" expr $ LetRec [(scrutId,scrut)] (Case (Var scrutId) ty alts)
@@ -337,7 +340,8 @@ caseSimpl ctx e@(Case scrut ty alts) = do
     doAlt :: (AltCon, Term) -> NormalizeSession ([CoreBinding], (AltCon, Term))
     doAlt alt@(DefaultAlt, expr) = do
       localVar <- isLocalVar expr
-      case localVar of
+      untranslatable <- isUntranslatable expr
+      case localVar || untranslatable of
         False -> do
           caseValId <- mkBinderFor "caseAlt" expr
           return ([(caseValId,expr)], (DefaultAlt, Var caseValId))
@@ -345,18 +349,24 @@ caseSimpl ctx e@(Case scrut ty alts) = do
 
     doAlt alt@(LiteralAlt l, expr) = do
       localVar <- isLocalVar expr
-      case localVar of
+      untranslatable <- isUntranslatable expr
+      case localVar || untranslatable of
         False -> do
           caseValId <- mkBinderFor "caseAlt" expr
           return ([(caseValId,expr)], (LiteralAlt l, Var caseValId))
         True -> return ([], alt)
 
     doAlt alt@(DataAlt dc bndrs, expr) = do
-        bndrsRes <- Monad.zipWithM doBndr bndrs [0..]
-        let (newBndrs, bindings) = unzip bndrsRes
-        (exprBinding, expr') <- doExpr expr
-        let newAlt = (DataAlt dc newBndrs, expr')
-        return (concat bindings ++ exprBinding, newAlt)
+        untranslatable <- isUntranslatable expr
+        localVar <- isLocalVar expr
+        case localVar || untranslatable of
+          False -> do
+            bndrsRes <- Monad.zipWithM doBndr bndrs [0..]
+            let (newBndrs, bindings) = unzip bndrsRes
+            (exprBinding, expr') <- doExpr expr
+            let newAlt = (DataAlt dc newBndrs, expr')
+            return (concat bindings ++ exprBinding, newAlt)
+          True -> return ([], alt)
       where
         wildBndrs = map (MkCore.mkWildValBinder . Id.idType) bndrs
         freeVars  = termSomeFreeVars (`elem` bndrs) expr
@@ -373,12 +383,8 @@ caseSimpl ctx e@(Case scrut ty alts) = do
 
         doExpr :: Term -> NormalizeSession ([CoreBinding], Term)
         doExpr altE = do
-          localVar <- isLocalVar altE
-          case localVar of
-            False -> do
-              caseValId <- mkBinderFor "caseAlt" altE
-              return ([(caseValId,altE)],Var caseValId)
-            True -> return ([], altE)
+          caseValId <- mkBinderFor "caseAlt" altE
+          return ([(caseValId,altE)],Var caseValId)
 
 caseSimpl _ _ = fail "caseSimpl"
 
@@ -404,7 +410,7 @@ appSimpl ctx e@(App appf arg)
 appSimpl _ _ = fail "appSimpl"
 
 bindUntranslatable :: NormalizeStep
-bindUntranslatable = inlineBind "inlineUntranslatable" (isUntranslatable . fst)
+bindUntranslatable = inlineBind ("bindUntranslatable") (isUntranslatable . fst)
 
 primSpec :: NormalizeStep
 primSpec ctx e@(App e1 e2)
@@ -438,7 +444,7 @@ inlineUntranslatable ctx e@(App e1 e2)
      (True,Just body) -> do
        let newBody = mkApps body args
        let newExpr = App e1 newBody
-       changed ("inlineUntranslatable: " ++ pprString (f,e2)) e newExpr
+       changed "inlineUntranslatable" e newExpr
      _ -> fail "inlineUntranslatable"
 
 inlineUntranslatable _ _ = fail "inlineUntranslatable"

@@ -21,7 +21,7 @@ builtinDataCons :: [String]
 builtinDataCons = ["I#","Int#","Signed","Unsigned"]
 
 builtinFuns :: [String]
-builtinFuns = ["xorB","andB","notB","orB","delay",
+builtinFuns = ["timesInteger","plusInteger","xorB","andB","notB","orB","delay",
   "+>>","vlast", "singleton", "empty", "+>","smallInteger","eqUnsigned",
   "neqUnsigned","plusUnsigned", "minUnsigned", "timesUnsigned",
   "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned",

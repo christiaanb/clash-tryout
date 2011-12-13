@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE PatternGuards    #-}
 module CLaSH.Util.CoreHW.Tools
   ( TypedThing(..)
   , nameString
@@ -336,6 +337,18 @@ getIntegerLiteral ::
   => s :-> (Map.Map OrdType Integer)
   -> Term
   -> m Integer
+getIntegerLiteral tfpSynLens expr@(App _ _)
+  | (Prim (PrimFun ti), [Left e1, Left e2]) <- collectArgs expr
+  , "timesInteger" <- varString ti
+  = do
+    [l1,l2] <- mapM (getIntegerLiteral tfpSynLens) [e1,e2]
+    return (l1*l2)
+  | (Prim (PrimFun ti), [Left e1, Left e2]) <- collectArgs expr
+  , "plusInteger" <- varString ti
+  = do
+    [l1,l2] <- mapM (getIntegerLiteral tfpSynLens) [e1,e2]
+    return (l1+l2)
+
 getIntegerLiteral tfpSynLens expr@(App _ _) =
   case collectArgs expr of
     (_, [Left (Literal (MachInt integer))])    -> return integer
@@ -390,6 +403,7 @@ fromTfpInt tfpSynLens ty@(TyConApp tycon args) = case (isClosedSynTyCon tycon, n
       "Dec7" -> return 7
       "Dec8" -> return 8
       "Dec9" -> return 9
+      "Dec0" -> return 0
       "Succ" -> do
         int <- fromTfpInt tfpSynLens $ head args
         return $ int + 1

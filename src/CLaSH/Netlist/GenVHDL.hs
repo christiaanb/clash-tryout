@@ -6,6 +6,7 @@ where
 
 -- External Modules
 import Text.PrettyPrint
+import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (nub)
 
@@ -87,6 +88,7 @@ imports others = vcat
   [ text "library IEEE" <> semi
   , text "use IEEE.STD_LOGIC_1164.ALL" <> semi
   , text "use IEEE.NUMERIC_STD.ALL" <> semi
+  , text "use STD.TEXTIO.ALL" <> semi
   ] $$ vcat [
       text ("use " ++ other) <> semi
     | other <- others
@@ -94,7 +96,7 @@ imports others = vcat
 
 entity :: Module -> Doc
 entity m = text "entity" <+> text (_modName m) <+> text "is" $$
-            nest 2 (text "port" <> parens (vcat $ punctuate semi ports) <> semi) $$
+            (case ports of [] -> text "" ; p -> nest 2 (text "port" <> parens (vcat $ punctuate semi p) <> semi)) $$
             text "end" <+> text "entity" <+> text (_modName m) <> semi
 
   where ports = [text i <+> colon <+> text "in" <+> slv_type ran | (i,ran) <- _modInputs m ] ++
@@ -138,9 +140,9 @@ inst _ (NetAssign i e) = Just $ text i <+> text "<=" <+> expr e
 inst gensym proc@(ProcessDecl evs) = Just $
     text gensym <+> colon <+> text "process" <> senlist <+> text "is" $$
     text "begin" $$
-    nest 2 (pstmts evs) $$
+    nest 2 (case evs of Left evs' -> pstmts evs'; Right stmts -> vcat (map stmt stmts)) $$
     text "end process" <+> text gensym
-  where senlist = parens $ cat $ punctuate comma $ map expr $   mkSensitivityList proc
+  where senlist = either (\_ -> parens $ cat $ punctuate comma $ map expr $ mkSensitivityList proc) (\_ -> text "") evs
 
 inst _ (InstDecl nm inst gens ins outs) = Just $
   text inst <+> colon <+> text "entity" <+> text nm $$
@@ -158,6 +160,9 @@ inst _ (InstDecl nm inst gens ins outs) = Just $
 inst _ (CommentDecl msg) = Just $
 	(vcat [ text "--" <+> text m | m <- lines msg ])
 
+inst _ (ClockDecl ident int e) = Just $
+  text ident <+> text "<= not" <+> text ident <+> text "after" <+> text (show $ (fromIntegral int) / 2.0) <+> text "ns when" <+> expr e
+
 inst _ _d = Nothing
 
 pstmts :: [(Event, Stmt)] -> Doc
@@ -174,6 +179,10 @@ event (Event i AsyncLow)  = expr i <+> text "= '0'"
 
 stmt :: Stmt -> Doc
 stmt (Assign l r) = expr l <+> text "<=" <+> expr r <> semi
+stmt (Seq ss) = vcat (map stmt ss)
+stmt (Wait Nothing) = text "wait" <> semi
+stmt (Wait (Just t)) = text "wait for" <+> text (show t) <+> text "ns" <> semi
+stmt (Assert e i1 i2) = text "assert" <+> (expr e) <+> text "report" <+> parens (text "\"expected: \" &" <+> (expr i2) <+> text "& \", actual: \" &" <+> (expr i1)) <+> text "severity error" <> semi
 
 to_bits :: Integral a => Int -> a -> [Bit]
 to_bits size val = map (\x -> if odd x then H else L)
@@ -213,12 +222,16 @@ expr (ExprCase _ [] (Just e)) = expr e
 expr (ExprCase e (([],_):alts) def) = expr (ExprCase e alts def)
 expr (ExprCase e ((p:ps,alt):alts) def) =
 	expr (ExprCond (ExprBinary Equals e p) alt (ExprCase e ((ps,alt):alts) def))
+expr (ExprDelay [])         = error "delay expression should have atleast one value"
+expr (ExprDelay [(e,n)])    = (expr e) <+> text "after" <+> text (show n) <+> text "ns"
+expr (ExprDelay ((e,n):es)) = (expr e) <+> text "after" <+> text (show n) <+> text "ns" <> comma $$ (expr (ExprDelay es))
 
 lookupUnary :: UnaryOp -> Doc -> Doc
 lookupUnary op e = text (unOp op) <> parens e
 
 unOp :: UnaryOp -> String
 unOp LNeg = "not"
+unOp Neg  = "-"
 
 lookupBinary :: BinaryOp -> Doc -> Doc -> Doc
 lookupBinary op a b = parens $ a <+> text (binOp op) <+> b
@@ -233,17 +246,19 @@ binOp Minus = "-"
 binOp Times = "*"
 
 mkSensitivityList :: Decl -> [Expr]
-mkSensitivityList (ProcessDecl evs) = nub event_names
+mkSensitivityList (ProcessDecl (Left evs)) = nub $ concat event_names
   where event_names =
-		map (\ (e,_) -> case e of
-				 Event (ExprVar name) _ -> ExprVar name
-				 _ -> error $ "strange form for mkSensitivityList " ++ show e
+		map (\e -> case e of
+                (Event (ExprVar name) AsyncLow, Assign _ (ExprVar name')) -> [ExprVar name, ExprVar name'];
+      				  (Event (ExprVar name) _, _)                    -> [ExprVar name];
+      				  _                                              -> error $ "strange form for mkSensitivityList " ++ show e
 		    ) evs
 
 tyName :: HWType -> String
 tyName BitType             = "std_logic"
 tyName BoolType            = "std_logic"
-tyName ClockType           = "std_logic"
+tyName (ClockType _)       = "std_logic"
+tyName (ResetType _)       = "std_logic"
 tyName (UnsignedType len)  = "unsigned" ++ show len
 tyName (SignedType len)    = "signed" ++ show len
 tyName (VecType _ e)       = vecTyName e
@@ -256,7 +271,8 @@ vecTyName e = (tyName e) ++ "_vector"
 slv_type :: HWType -> Doc
 slv_type BitType                  = text "std_logic"
 slv_type BoolType                 = text "std_logic"
-slv_type ClockType                = text "std_logic"
+slv_type (ClockType _)            = text "std_logic"
+slv_type (ResetType _)            = text "std_logic"
 slv_type (UnsignedType len)       = text "unsigned" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type (SignedType len)         = text "signed" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)
 slv_type hwtype@(VecType s e)     = text (tyName hwtype) <> range (ExprLit Nothing $ ExprNum $ toInteger $ s - 1, ExprLit Nothing $ ExprNum 0)

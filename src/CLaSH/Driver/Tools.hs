@@ -2,6 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module CLaSH.Driver.Tools
   ( isTopEntity
+  , isTestInput
+  , isExpectedOutput
   , getGlobalExpr
   , addGlobalBind
   )
@@ -24,8 +26,9 @@ import qualified Name
 import qualified Var
 
 -- Internal Modules
+import CLaSH.Driver.Types
 import CLaSH.Util.Core         (nameToString)
-import CLaSH.Util.CoreHW       (varStringUniq,builtinIds)
+import CLaSH.Util.CoreHW       (Var,Term,varStringUniq,builtinIds)
 import CLaSH.Util.GHC          (loadExtExpr)
 import CLaSH.Util.Pretty       (pprString)
 
@@ -34,6 +37,18 @@ isTopEntity ::
   -> Bool
 isTopEntity bind =
   "topEntity" == (Name.occNameString . Name.nameOccName . Name.getName) bind
+
+isTestInput ::
+  Var.Var
+  -> Bool
+isTestInput bind =
+  "testInput" == (Name.occNameString . Name.nameOccName . Name.getName) bind
+
+isExpectedOutput ::
+  Var.Var
+  -> Bool
+isExpectedOutput bind =
+  "expectedOutput" == (Name.occNameString . Name.nameOccName . Name.getName) bind
 
 getGlobalExpr ::
   (State.MonadState s m, Error.MonadIO m, Functor m)
