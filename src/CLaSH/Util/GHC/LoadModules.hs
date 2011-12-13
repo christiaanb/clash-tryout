@@ -44,4 +44,4 @@ parseModule modSum = do
 disableOptimizationsFlags :: GHC.ModSummary -> GHC.ModSummary
 disableOptimizationsFlags ms@(GHC.ModSummary {..}) = ms {GHC.ms_hspp_opts = dflags}
   where
-    dflags = ms_hspp_opts {DynFlags.optLevel = 0, GHC.simplPhases = 0}
+    dflags = DynFlags.dopt_unset (ms_hspp_opts {DynFlags.optLevel = 0}) DynFlags.Opt_EnableRewriteRules
