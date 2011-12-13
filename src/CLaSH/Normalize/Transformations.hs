@@ -444,7 +444,7 @@ inlineUntranslatable ctx e@(App e1 e2)
      (True,Just body) -> do
        let newBody = mkApps body args
        let newExpr = App e1 newBody
-       changed ("inlineUntranslatable: " ++ pprString (f,e2)) e newExpr
+       changed "inlineUntranslatable" e newExpr
      _ -> fail "inlineUntranslatable"
 
 inlineUntranslatable _ _ = fail "inlineUntranslatable"
