@@ -29,28 +29,58 @@ import CLaSH.Util.Pretty           (pprString)
 genTestbench ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr
   -> NetlistState
-  -> Var    -- ^ Input stimuli container
-  -> Var    -- ^ Expected Output container
-  -> Module -- ^ Top Entity
+  -> Maybe Var -- ^ Input stimuli container
+  -> Maybe Var -- ^ Expected Output container
+  -> Module    -- ^ Top Entity
   -> DriverSession ([Module], [HWType])
-genTestbench globals nlState stimuli expectedOutput (Module modName inps@[modInp,modClock@(_,ClockType clockRate),modReset] [modOutp] _) = do
+genTestbench globals nlState mStimuli mExpectedOutput (Module modName inps [modOutp] _) = do
+  (inpDecls,inpMods,inpTypes,nlState',nInps) <- case mStimuli of
+    Just stimuli -> do
+      (decls,signals,mods,hwtypes,nlState') <- prepareSignals globals nlState stimuli Nothing
+      let inpAssign   = case inps of
+                          -- Single input and clock
+                          [modInp,modClock@(_,ClockType clockRate),modReset] ->
+                            (NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (iterate (+(fromIntegral clockRate)) 0.0)):decls
+                          -- Clock only
+                          [modClock@(_,ClockType clockRate),modReset] -> decls
+                          -- Input only
+                          [modInp] -> (NetAssign (fst modInp) (ExprVar $ head signals)):decls
+                          -- No input
+                          [] -> []
+                          _  -> error $ $(curLoc) ++ "Can't make testbench for module with following inputs: " ++ show (modName,inps)
+      return (inpAssign,mods,hwtypes,nlState',length signals)
+    Nothing -> return ([],[],[],nlState,0)
 
-  (decls,signals,mods,hwtypes,nlState') <- prepareSignals globals nlState stimuli        Nothing
-  (decls',signals',mods',hwtypes',_)    <- prepareSignals globals nlState expectedOutput (Just $ Label.get nlVarCnt nlState')
+  (expDecls,expMods,expTypes,nExps) <- case mExpectedOutput of
+    Just expectedOutput -> do
+      (decls,signals,mods,hwtypes,_) <- prepareSignals globals nlState expectedOutput (Just $ Label.get nlVarCnt nlState')
+      let assertStmt = ProcessDecl $ Right $ case inps of
+                        -- Single input and clock
+                        [modInp,modClock@(_,ClockType clockRate),modReset] -> concat
+                                                                              [ [Wait (Just $ fromIntegral clockRate / 2.0)]
+                                                                              , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals
+                                                                              , [Wait Nothing]
+                                                                              ]
+                        -- Clock only
+                        [modClock@(_,ClockType clockRate),modReset]        -> concat
+                                                                              [ [Wait (Just $ fromIntegral clockRate / 2.0)]
+                                                                              , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals
+                                                                              , [Wait Nothing]
+                                                                              ]
+                        -- Input only
+                        [modInp]                                           -> [genAssertion (fst modOutp) $ head signals]
+                        -- No input
+                        []                                                 -> [genAssertion (fst modOutp) $ head signals]
+      return (assertStmt:decls,mods,hwtypes,length signals)
+    Nothing -> return ([],[],[],0)
 
-  let topDecls    = concatMap (genDecl (length signals)) [modInp,modClock,modReset,modOutp]
-  let inpAssign   = NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (iterate (+(fromIntegral clockRate)) 0.0)
-  let instDecl    = InstDecl modName "totest" [] (map genPortAssign inps) (map genPortAssign [modOutp])
+  let topDecls = concatMap (genDecl (max nInps nExps)) (modOutp:inps)
+  let instDecl = InstDecl modName "totest" [] (map genPortAssign inps) (map genPortAssign [modOutp])
 
-  let assertStmts = ProcessDecl $ Right $ concat
-                      [ [Wait (Just $ fromIntegral clockRate / 2.0)]
-                      , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals'
-                      , [Wait Nothing]
-                      ]
+  return ((Module "testBench" [] [] (topDecls ++ instDecl:inpDecls ++ expDecls)):inpMods ++ expMods, List.nub $ inpTypes ++ expTypes)
 
-  return ((Module "testbench" [] [] (instDecl:topDecls ++ inpAssign:assertStmts:decls ++ decls')):mods ++ mods',List.nub $ hwtypes ++ hwtypes')
-
-genTestbench _ _ _ _ (Module modName inps outps decls) = error $ "Don't know how to make testbench for: " ++ show (modName,inps,outps)
+genTestbench globals nlState mStimuli mExpectedOutput (Module modName inps outps _) =
+  error $ $(curLoc) ++ "Can't make testbench for module with multiple outputs: " ++ show (modName,outps)
 
 prepareSignals ::
   Map CoreSyn.CoreBndr CoreSyn.CoreExpr

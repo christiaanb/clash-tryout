@@ -9,6 +9,7 @@ import qualified Data.Time.Clock as Clock
 import qualified Data.Label.PureM as Label
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
@@ -50,7 +51,7 @@ generateVHDL modName = do
         coreHWBindings            <- prepareBinding globalBindings topEntity
         (netlistState,normalized) <- normalize coreHWBindings empytNetlistState topEntity
         (netlist, elTypes,_)      <- genNetlist   netlistState    normalized topEntity Nothing
-        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (fst $ head testInputs) (fst $ head expectedOutputs) (head netlist)
+        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (Maybe.listToMaybe $ map fst testInputs) (Maybe.listToMaybe $ map fst expectedOutputs) (head netlist)
         let usedTypes             = List.nub (tbTypes ++ elTypes)
         let (elTypesV,elTypesP)   = case usedTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
         let vhdl                  = map (genVHDL elTypesP) (netlist ++ testbench)
