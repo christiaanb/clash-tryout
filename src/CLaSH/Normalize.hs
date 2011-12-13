@@ -78,7 +78,7 @@ normalize' nonRepr (bndr:bndrs) = do
         )
       if normalizable then do
           normalizedExpr <- makeCachedT2 bndr nsNormalized $
-            normalizeExpr (show bndr) expr
+            normalizeExpr (varString bndr) expr
           let usedBndrs = VarSet.varSetElems $ termSomeFreeVars
                             (\v -> (Var.isId v) &&
                                    (not $ Id.isDictId v) &&
