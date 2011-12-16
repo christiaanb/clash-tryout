@@ -438,7 +438,7 @@ inlineUntranslatable ctx e@(App e1 e2)
   , (Var f, args) <- collectArgs e2
   , not (isApplicable e2)
   = do
-   untranslatable <- liftQ $ isUntranslatable f
+   untranslatable <- liftQ $ isUntranslatable e2
    bodyMaybe      <- liftQ $ getGlobalExpr f
    case (untranslatable,bodyMaybe) of
      (True,Just body) -> do
