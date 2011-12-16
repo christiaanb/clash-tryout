@@ -115,6 +115,7 @@ mkConcSm (bndr, app@(App _ _)) = do
         then builder bndr args
         else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin constructor(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
       Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive constructor that is not a known builtin: " ++ pprString (bndr,app)
+    Lambda _ _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var (beta-reducable):\n" ++ pprString app
     _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
 
 mkConcSm (bndr, expr@(Case (Var scrut) ty [alt])) = do
@@ -307,7 +308,7 @@ genApplication dst f args =  do
                   let comment = genComment dst (pprString f) args
                   return ([comment, InstDecl modName (mkVHDLBasicId $ "comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                 else do
-                  Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
+                  Error.throwError $ $(curLoc) ++ "Under/Over-applied normalized function: (exptected: " ++ show (length modInps) ++ ", actual: " ++ show (length clocks + length args)++ "): " ++ pprString (dst,f,args)
             else Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
     else
       return ([],[])
