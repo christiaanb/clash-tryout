@@ -23,19 +23,53 @@ genTypes elTypes = render vhdl ++ "\n"
 
 package :: [HWType] -> Doc
 package elTypes = text "package types is" $$
-                  nest 2 ((vcat $ punctuate semi vecTys) <> semi $$
+                  nest 2 ((case elTypes of [] -> text ""; _ -> (vcat $ punctuate semi vecTys) <> semi) $$
                           (vcat vecFuns)) $$
                   text "end package types" <> semi $$
                   text "package body types is" $$
+                  nest 2 (vcat vecBoolConvBody) $$
                   nest 2 (vcat $ map toVecFunBody elTypes) $$
                   nest 2 (vcat $ map fromVecFunBody elTypes) $$
                   text "end package body types" <> semi
   where
     vecTys  = [text "type" <+> text (vecTyName t) <+> text "is array (natural range <>) of" <+> (slv_type t) | t <- elTypes]
-    vecFuns = [text "function" <+> text "toSLV" <+> parens (text "ain" <+> colon <+> text (vecTyName t)) <+> text "return std_logic_vector" <> semi $$
+    vecFuns = [text "function" <+> text "toSLV" <+> parens (text "bin" <+> colon <+> text "boolean") <+> text "return std_logic_vector" <> semi
+              ,text "function" <+> text "fromSLV" <+> parens (text "vin" <+> colon <+> text "std_logic_vector") <+> text "return boolean" <> semi
+              ] ++
+              [text "function" <+> text "toSLV" <+> parens (text "ain" <+> colon <+> text (vecTyName t)) <+> text "return std_logic_vector" <> semi $$
                text "function" <+> text "fromSLV" <+> parens (text "vin" <+> colon <+> text "std_logic_vector") <+> text "return" <+> text (vecTyName t) <> semi
               | t <- elTypes
               ]
+
+vecBoolConvBody :: [Doc]
+vecBoolConvBody =
+  [ text "function" <+> text "toSLV" <+> parens (text "bin" <+> colon <+> text "boolean") <+> text "return std_logic_vector is" $$
+    nest 4 (text "variable res" <+> colon <+> text "std_logic_vector" <+> parens (text "0 downto 0" ) <> semi) $$
+    nest 2 (text "begin" $$
+            nest 2 (text "if bin then" $$
+                    nest 2 (text "res := \"1\"" <> semi) $$
+                    text "else" $$
+                    nest 2 (text "res := \"0\"" <> semi) $$
+                    text "end if" <> semi $$
+                    text "return res" <> semi
+                   ) $$
+            text "end" <> semi
+           )
+  , text "function" <+> text "fromSLV" <+> parens (text "vin" <+> colon <+> text "std_logic_vector") <+> text "return boolean is" $$
+    nest 4 (text "variable res" <+> colon <+> text "boolean" <> semi $$
+            text "variable tmp" <+> colon <+> text "std_logic" <> semi) $$
+    nest 2 (text "begin" $$
+            nest 2 (text "tmp := vin(0)" <> semi $$
+                    text "if tmp = \'1\' then" $$
+                    nest 2 (text "res := true" <> semi) $$
+                    text "else" $$
+                    nest 2 (text "res := false" <> semi) $$
+                    text "end if" <> semi $$
+                    text "return res" <> semi
+                   ) $$
+            text "end" <> semi
+           )
+  ]
 
 toVecFunBody :: HWType -> Doc
 toVecFunBody elTy =
@@ -205,6 +239,8 @@ expr_lit :: Maybe Size -> ExprLit -> Doc
 expr_lit Nothing (ExprNum i)          = int $ fromIntegral i
 expr_lit (Just sz) (ExprNum i)        = bits (to_bits sz i)
 expr_lit _ (ExprBit x)                = quotes (char (bit_char x))
+expr_lit _ (ExprBool b)               = text (show b)
+expr_lit Nothing (ExprBitVector xs)   = bits xs
 
 expr :: Expr -> Doc
 expr (ExprLit mb_sz lit) = expr_lit mb_sz lit
@@ -256,7 +292,7 @@ mkSensitivityList (ProcessDecl (Left evs)) = nub $ concat event_names
 
 tyName :: HWType -> String
 tyName BitType             = "std_logic"
-tyName BoolType            = "std_logic"
+tyName BoolType            = "boolean"
 tyName (ClockType _)       = "std_logic"
 tyName (ResetType _)       = "std_logic"
 tyName (UnsignedType len)  = "unsigned" ++ show len
@@ -270,7 +306,7 @@ vecTyName e = (tyName e) ++ "_vector"
 
 slv_type :: HWType -> Doc
 slv_type BitType                  = text "std_logic"
-slv_type BoolType                 = text "std_logic"
+slv_type BoolType                 = text "boolean"
 slv_type (ClockType _)            = text "std_logic"
 slv_type (ResetType _)            = text "std_logic"
 slv_type (UnsignedType len)       = text "unsigned" <> range (ExprLit Nothing $ ExprNum $ toInteger $ len - 1, ExprLit Nothing $ ExprNum 0)

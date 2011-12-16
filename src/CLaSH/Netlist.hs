@@ -46,7 +46,7 @@ genNetlist nlState normalized topEntity mStart = do
   case retVal of
     Left errMsg   -> error errMsg
     Right netlist -> do
-      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType && e /= BoolType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
+      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
       return (netlist,elTypes,nlState')
 
 genModules ::
@@ -165,7 +165,7 @@ mkConcSm (bndr, expr@(Case (Var scrut) _ alts)) = do
     BitType -> do
       return (map (ExprLit Nothing . ExprBit) [H,L], scrutExpr)
     BoolType -> do
-      return (map (ExprLit Nothing . ExprBit) [L,H], scrutExpr)
+      return (map (ExprLit Nothing . ExprBool) [False,True], scrutExpr)
     SPType _ conArgsPairs -> do
       let conSize = ceiling $ logBase 2 $ fromIntegral $ length conArgsPairs
       let hSize   = htypeSize scrutHWType
@@ -246,6 +246,7 @@ genApplication dst f args =  do
                         LT -> Error.throwError $ $(curLoc) ++ "Not in normal form: overapplied constructor: " ++ pprString (dst,f,args) ++ show argTys
                         GT -> Error.throwError $ $(curLoc) ++ "Not in normal form: underapplied constructor: " ++ pprString (dst,f,args') ++ show argTys
                     BitType -> simpleAssign dstType args'
+                    BoolType -> simpleAssign dstType args'
                     other -> error $ "genApp dataConWork: " ++ show other
                     where
                       simpleAssign dstType [] = do

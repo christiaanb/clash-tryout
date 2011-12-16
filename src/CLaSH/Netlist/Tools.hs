@@ -28,6 +28,7 @@ module CLaSH.Netlist.Tools
   , makeUnique
   , appendToName
   , mkTempVar
+  , zeroSignal
   )
 where
 
@@ -228,6 +229,7 @@ dataconToExpr hwType dc = do
   let dcName = DataCon.dataConName dc
   case hwType of
     BitType -> return $ ExprLit Nothing $ ExprBit (case Name.getOccString dcName of "H" -> H; "L" -> L ; other -> error $ "other: " ++ show other)
+    BoolType -> return $ ExprLit Nothing $ ExprBool (case Name.getOccString dcName of "True" -> True; "False" -> False ; other -> error $ "other: " ++ show other)
     SPType _ args -> do
       let conSize  = ceiling $ logBase 2 $ fromIntegral $ length args
       let conIndex = Maybe.fromJust . List.elemIndex (nameString dcName) . map fst $ args
@@ -340,7 +342,6 @@ mkVHDLBasicId = (stripMultiscore . stripLeading . zEncodeString)
 
 toSLV :: HWType -> Expr -> Expr
 toSLV BitType           e = e
-toSLV BoolType          e = e
 toSLV (SumType _ _)     e = e
 toSLV (ProductType _ _) e = e
 toSLV (SPType _ _)      e = e
@@ -348,7 +349,6 @@ toSLV t                 e = ExprFunCall (toSLVString t) [e]
 
 fromSLV :: HWType -> Expr -> Expr
 fromSLV BitType (ExprVar v)   = ExprIndex v (ExprLit Nothing $ ExprNum 0)
-fromSLV BoolType (ExprVar v)  = ExprIndex v (ExprLit Nothing $ ExprNum 0)
 fromSLV (ClockType _) (ExprVar v) = ExprIndex v (ExprLit Nothing $ ExprNum 0)
 fromSLV (SumType _ _)     e   = e
 fromSLV (ProductType _ _) e   = e
@@ -360,6 +360,7 @@ toSLVString IntegerType       = error "Integer cannot be converted to SLV"
 toSLVString (UnsignedType _)  = "std_logic_vector"
 toSLVString (SignedType _)    = "std_logic_vector"
 toSLVString (VecType _ _)     = "toSLV"
+toSLVString BoolType          = "toSLV"
 toSLVString _                 = ""
 
 fromSLVString :: HWType -> String
@@ -367,6 +368,7 @@ fromSLVString IntegerType       = error "Integer cannot be converted from SLV"
 fromSLVString (UnsignedType _)  = "unsigned"
 fromSLVString (SignedType _)    = "signed"
 fromSLVString (VecType _ _)     = "fromSLV"
+fromSLVString BoolType          = "fromSLV"
 fromSLVString _                 = ""
 
 
@@ -414,3 +416,11 @@ appendToName v a = v'
     n  = Var.varName v
     n' = Name.mkFCallName (Name.nameUnique n) (varString v ++ a)
     v' = Var.setVarName v n'
+
+zeroSignal ::
+  HWType
+  -> Expr
+zeroSignal BitType           = ExprLit Nothing (ExprBit L)
+zeroSignal BoolType          = ExprLit Nothing (ExprBool False)
+zeroSignal (VecType _ eType) = ExprAll (zeroSignal eType)
+zeroSignal _                 = ExprAll (ExprLit Nothing (ExprBit L))

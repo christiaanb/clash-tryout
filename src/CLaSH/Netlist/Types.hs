@@ -77,6 +77,7 @@ data Expr = ExprLit     (Maybe Size) ExprLit
 data ExprLit = ExprNum       Integer
              | ExprBit       Bit
              | ExprBitVector [Bit]
+             | ExprBool      Bool
   deriving (Eq,Ord,Show)
 
 data Bit = H | L | U | Z
