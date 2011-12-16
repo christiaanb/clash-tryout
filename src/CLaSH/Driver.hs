@@ -54,9 +54,9 @@ generateVHDL modName = do
         let topNetlist            = head $ filter (\(Module modName _ _ _) -> modName == "topEntity_0") netlist
         (testbench, tbTypes)      <- genTestbench globalBindings netlistState (Maybe.listToMaybe $ map fst testInputs) (Maybe.listToMaybe $ map fst expectedOutputs) topNetlist
         let usedTypes             = List.nub (tbTypes ++ elTypes)
-        let (elTypesV,elTypesP)   = case usedTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
+        let (elTypesV,elTypesP)   = (genTypes usedTypes, ["work.types.all","work.all"])
         let vhdl                  = map (genVHDL elTypesP) (netlist ++ testbench)
-        return (topEntity,case elTypesV of [] -> vhdl ; _ -> ("types",elTypesV):vhdl)
+        return (topEntity,("types",elTypesV):vhdl)
       []          -> error $ $(curLoc) ++ "No 'topEntity' found"
       otherwise   -> error $ $(curLoc) ++ "Found multiple top entities: " ++
                              show (map fst topEntities)
