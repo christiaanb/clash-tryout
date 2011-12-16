@@ -278,7 +278,7 @@ retVar [] e@(Lambda x (Var x')) | x == x' = do
 retVar _ _ = fail "retVar"
 
 inlineVar :: NormalizeStep
-inlineVar = inlineBind "inlineVar" (return . isVar . snd)
+inlineVar = inlineBind "inlineVar" (isLocalVar . snd)
 
 emptyLet :: NormalizeStep
 emptyLet ctx e@(LetRec [] res) = changed "emptyLet" e res
