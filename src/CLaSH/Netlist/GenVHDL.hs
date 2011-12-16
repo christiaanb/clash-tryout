@@ -176,7 +176,7 @@ inst gensym proc@(ProcessDecl evs) = Just $
     text "begin" $$
     nest 2 (case evs of Left evs' -> pstmts evs'; Right stmts -> vcat (map stmt stmts)) $$
     text "end process" <+> text gensym
-  where senlist = either (\_ -> parens $ cat $ punctuate comma $ map expr $ mkSensitivityList proc) (\_ -> text "") evs
+  where senlist = (\t -> case isEmpty t of True -> text ""; False -> parens t) $ cat $ punctuate comma $ map expr $ mkSensitivityList proc
 
 inst _ (InstDecl nm inst gens ins outs) = Just $
   text inst <+> colon <+> text "entity" <+> text nm $$
@@ -287,9 +287,26 @@ mkSensitivityList (ProcessDecl (Left evs)) = nub $ concat event_names
   where event_names =
 		map (\e -> case e of
                 (Event (ExprVar name) AsyncLow, Assign _ (ExprVar name')) -> [ExprVar name, ExprVar name'];
-      				  (Event (ExprVar name) _, _)                    -> [ExprVar name];
-      				  _                                              -> error $ "strange form for mkSensitivityList " ++ show e
+                (Event (ExprVar name) _, _)                               -> [ExprVar name];
+                _                                                         -> error $ "strange form for mkSensitivityList " ++ show e
 		    ) evs
+
+mkSensitivityList (ProcessDecl (Right sts)) = nub $ concat event_names
+  where
+    event_names = map (map ExprVar . stmtName []) sts
+
+    stmtName exclude (Assign _ e)          = exprName exclude e
+    stmtName exclude (IfSt e s1 (Just s2)) = (exprName exclude e) ++ (stmtName exclude s1) ++ (stmtName exclude s2)
+    stmtName exclude (ForSt i _ _ s)       = stmtName (i:exclude) s
+    stmtName _ _                           = []
+
+    exprName exclude (ExprVar n)        = case n `elem` exclude of True -> []; False -> [n]
+    exprName exclude (ExprIndex s i)    = case s `elem` exclude of True -> []; False -> [s]
+    exprName exclude (ExprSlice s h l)  = case s `elem` exclude of True -> []; False -> [s]
+    exprName exclude (ExprFunCall _ es) = concatMap (exprName exclude) es
+    exprName exclude (ExprBinary _ e1 e2) = concatMap (exprName exclude) [e1,e2]
+    exprName _       _                  = []
+
 
 tyName :: HWType -> String
 tyName BitType             = "std_logic"
