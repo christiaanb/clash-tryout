@@ -194,6 +194,10 @@ mkConcSm (bndr, Literal lit) = do
 mkConcSm (bndr, Data dc)
   = genApplication bndr (DataCon.dataConWorkId dc) []
 
+mkConcSm (bndr, tyApp@(TyApp _ _))
+  | (Data dc, []) <- collectExprArgs tyApp
+  = genApplication bndr (DataCon.dataConWorkId dc) []
+
 mkConcSm (bndr, expr) = Error.throwError $ $(curLoc) ++ "Not in normal form: let-bound expr is not a Lit, Var, Case or App:\n" ++ pprString expr
 
 genApplication ::
