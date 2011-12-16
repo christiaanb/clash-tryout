@@ -85,7 +85,7 @@ genModule' modName modExpr mStart = do
   let modInps'     = (zip argNames argTypes) ++ (List.nub $ concat clocks)
   let modInps      = filter (not . untranslatableHType . snd) modInps'
   let modOutps     = [(resName,resType)]
-  modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (varString d) t Nothing) (filter ((/= res) . fst) binds)
+  modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (mkVHDLBasicId $ varString d) t Nothing) (filter ((/= res) . fst) binds)
   let modAssigns   = concat assigns
   return $ Module modName' modInps modOutps (modDecls ++ modAssigns)
 
@@ -273,9 +273,9 @@ genApplication dst f args =  do
                       args' <- mapM varToExpr args
                       let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
                       let inpsAssign = zip (map fst clocksN) args'
-                      let outpAssign  = (fst modOutps, ExprVar dstName)
+                      let outpAssign  = (fst modOutps, ExprVar $ mkVHDLBasicId dstName)
                       let comment = genComment dst (pprString f) args
-                      return ([comment, InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
+                      return ([comment, InstDecl modName (mkVHDLBasicId $ "comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                     else do
                       Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
                 else do
@@ -295,9 +295,9 @@ genApplication dst f args =  do
                   args' <- mapM varToExpr args
                   let clocksAssign = map (\(c,_) -> (c,ExprVar c)) clocks
                   let inpsAssign = zip (map fst clocksN) args'
-                  let outpAssign  = (fst modOutps, ExprVar dstName)
+                  let outpAssign  = (fst modOutps, ExprVar $ mkVHDLBasicId dstName)
                   let comment = genComment dst (pprString f) args
-                  return ([comment, InstDecl modName ("comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
+                  return ([comment, InstDecl modName (mkVHDLBasicId $ "comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                 else do
                   Error.throwError $ $(curLoc) ++ "Under applied normalized function: " ++ pprString (dst,f,args) ++ show modu
             else Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
@@ -458,12 +458,12 @@ genVfoldl :: BuiltinBuilder
 genVfoldl dst [fArg,Var zArg,Var vArg] = do
   vType@(VecType len etype) <- mkHType vArg
   let comment  = genComment dst "vfoldl" [fArg,Var zArg, Var vArg]
-  let vIndexed = map (\i -> (:[]) . Left . Var $ appendToName vArg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
+  let vIndexed = map (\i -> (:[]) . Left . Var $ appendToName vArg ("(" ++ show i ++ ")")) [0..len-1]
   bndrs        <- mapM mkTempVar (replicate (len-1) dst)
   let bndrs'   = map (Left . Var) (zArg:bndrs)
   let vs       = zipWith (:) bndrs' vIndexed
   let exprs    = map (mkApps fArg) vs
-  let tempDecls = map (\v -> NetDecl (varString v) etype Nothing) bndrs
+  let tempDecls = map (\v -> NetDecl (mkVHDLBasicId $ varString v) etype Nothing) bndrs
   (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip (bndrs++[dst]) exprs
   return (comment:tempDecls ++ assigns,clks)
 
