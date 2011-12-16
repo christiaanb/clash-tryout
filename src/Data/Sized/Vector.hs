@@ -193,6 +193,9 @@ x +>> (Vector xs) = Vector (x : init xs)
 (<<+) :: Vector s a -> a -> Vector s a
 (Vector xs) <<+ x = Vector (tail xs ++ [x])
 
+infixr 5 +>>
+infixl 5 <<+
+
 vrotl :: forall s a . NaturalT s => Vector s a -> Vector s a
 vrotl = liftV rotl'
   where vlen = fromIntegerT (undefined :: s)
