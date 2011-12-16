@@ -171,7 +171,7 @@ loopDesugar ctx expr@(Var loop) | Name.getOccString loop == "loop" = do
 loopDesugar ctx expr = fail "arrowLoopDesugar"
 
 usedComponentDesugar :: DesugarStep
-usedComponentDesugar ctx expr@(App _ _)
+usedComponentDesugar ctx expr
   | (Var f, args) <- CoreSyn.collectArgs expr
   , isArrowExpression expr
   , (Name.getOccString f) `notElem` builtinArrowFuns
