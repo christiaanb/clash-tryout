@@ -318,6 +318,8 @@ builtinBuilders =
   , ("orB"                , (2, genBinaryOperator "orB"  Or ))
   , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
   , ("delay"              , (3, genDelay))
+  , ("eqUnsigned"         , (3, \d args -> genBinaryOperator "(==)"  Equals d (tail args)))
+  , ("neqUnsigned"        , (3, \d args -> genBinaryOperator "(/=)"  NotEquals d (tail args)))
   , ("plusUnsigned"       , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
   , ("minUnsigned"        , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
   , ("plusSigned"         , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
@@ -327,13 +329,18 @@ builtinBuilders =
   , ("unsignedFromInteger", (2, genFromInteger))
   , ("signedFromInteger"  , (2, genFromInteger))
   , ("+>>"                , (2, genShiftIntoL))
-  , ("+>"                 , (2, genVCons))
-  , ("vlast"              , (2, genVLast))
+  , ("<<+"                , (2, genShiftIntoR))
+  , ("+>"                 , (2, genVcons))
+  , ("vlast"              , (2, genVlast))
+  , ("vinit"              , (2, genVinit))
   , ("singleton"          , (1, genSingleton))
   , ("vcopy"              , (2, genVCopy))
   , ("vcopyn"             , (3, genVCopyn))
   , ("vfoldl"             , (3, genVfoldl))
   , ("vzipWith"           , (4, genVzipWith))
+  , ("vmap"               , (2, genVmap))
+  , ("!"                  , (3, genIndex))
+  , ("vreplace"           , (4, genVreplace))
   , ("Signed"             , (1, \d args -> genFromInteger d (undefined:args)))
   , ("Unsigned"           , (1, \d args -> genFromInteger d (undefined:args)))
   ]
@@ -395,19 +402,37 @@ genFromInteger dst [_,arg] = do
   return (comment:litExpr,[])
 
 genShiftIntoL :: BuiltinBuilder
-genShiftIntoL dst [Var elArg,Var vecArg] = do
+genShiftIntoL dst args@[Var elArg,Var vecArg] = do
   dstType@(VecType len etype) <- mkHType vecArg
-  let [elName,vecName] = map varString [elArg,vecArg]
-  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 1)) (ExprLit Nothing $ ExprNum 1)])
+  let [elName,vecName] = map (mkVHDLBasicId . varString) [elArg,vecArg]
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 2)) (ExprLit Nothing $ ExprNum 0), ExprVar elName])
   let comment = genComment dst "(+>>)" [Var elArg, Var vecArg]
   return (comment:assignExpr,[])
 
-genVLast :: BuiltinBuilder
-genVLast dst [_,Var vecArg] = do
+genShiftIntoR :: BuiltinBuilder
+genShiftIntoR dst [Var vecArg,Var elArg] = do
+  dstType@(VecType len etype) <- mkHType vecArg
+  let [elName,vecName] = map (mkVHDLBasicId . varString) [elArg,vecArg]
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat [ExprVar elName, ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 1)) (ExprLit Nothing $ ExprNum 1)])
+  let comment = genComment dst "(<<+)" [Var vecArg, Var elArg]
+  return (comment:assignExpr,[])
+
+genVlast :: BuiltinBuilder
+genVlast dst [_,Var vecArg] = do
   dstType <- mkHType dst
-  let vecName = varString vecArg
-  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum 0))
+  (VecType len _) <- mkHType (Var vecArg)
+  let vecName = (mkVHDLBasicId . varString) vecArg
+  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprLit Nothing $ ExprNum (toInteger $ len - 1)))
   let comment = genComment dst "vlast" [Var vecArg]
+  return (comment:selExpr,[])
+
+genVinit :: BuiltinBuilder
+genVinit dst [_,Var vecArg] = do
+  dstType <- mkHType dst
+  (VecType len _) <- mkHType vecArg
+  let vecName = (mkVHDLBasicId . varString) vecArg
+  let selExpr = mkUncondAssign (dst,dstType) (ExprSlice vecName (ExprLit Nothing $ ExprNum $ toInteger (len - 2)) (ExprLit Nothing $ ExprNum 0))
+  let comment = genComment dst "vinit" [Var vecArg]
   return (comment:selExpr,[])
 
 genSingleton :: BuiltinBuilder
@@ -446,21 +471,52 @@ genVzipWith :: BuiltinBuilder
 genVzipWith dst [_,fArg,Var v1Arg,Var v2Arg] = do
   dstType@(VecType len etype) <- mkHType dst
   let comment    = genComment dst "vzipWith" [fArg,Var v1Arg,Var v2Arg]
-  let v1Indexed  = map (\i -> Left . Var $ appendToName v1Arg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
-  let v2Indexed  = map (\i -> (:[]) . Left . Var $ appendToName v2Arg ("(" ++ show i ++ ")")) $ reverse [0..len-1]
+  let v1Indexed  = map (\i -> Left . Var $ appendToName v1Arg ("(" ++ show i ++ ")")) $ [0..len-1]
+  let v2Indexed  = map (\i -> (:[]) . Left . Var $ appendToName v2Arg ("(" ++ show i ++ ")")) $ [0..len-1]
   let vs         = zipWith (:) v1Indexed v2Indexed
   let exprs      = map (mkApps fArg) vs
   bndrs          <- mapM mkTempVar (replicate len dst)
-  let tempDelcs  = map (\v -> NetDecl (varString v) etype Nothing) bndrs
+  let tempDecls  = map (\v -> NetDecl (mkVHDLBasicId $ varString v) etype Nothing) bndrs
   (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
-  let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . varString) bndrs)
-  return (comment : tempDelcs ++ assigns ++ assignExpr,clks)
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . mkVHDLBasicId . varString) $ reverse bndrs)
+  return (comment : tempDecls ++ assigns ++ assignExpr,clks)
 
-genVCons :: BuiltinBuilder
-genVCons dst [eArg,vArg] = do
+genVmap :: BuiltinBuilder
+genVmap dst [fArg,Var vArg] = do
+  dstType@(VecType len etype) <- mkHType dst
+  let comment    = genComment dst "vmap" [fArg,Var vArg]
+  let vIndexed   = map (\i -> (:[]) . Left . Var $ appendToName vArg ("(" ++ show i ++ ")")) $ [0..len-1]
+  bndrs          <- mapM mkTempVar (replicate len dst)
+  let exprs      = map (mkApps fArg) vIndexed
+  let tempDecls  = map (\v -> NetDecl (mkVHDLBasicId $ varString v) etype Nothing) bndrs
+  (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
+  let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . mkVHDLBasicId . varString) $ reverse bndrs)
+  return (comment : tempDecls ++ assigns ++ assignExpr,clks)
+
+genIndex :: BuiltinBuilder
+genIndex dst [_,Var vecArg,Var iArg] = do
+  dstType <- mkHType dst
+  let [vecName,iName] = map (mkVHDLBasicId . varString) [vecArg,iArg]
+  let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprFunCall "to_integer" [ExprVar iName]))
+  let comment = genComment dst "(!)" [Var vecArg,Var iArg]
+  return (comment:selExpr,[])
+
+genVreplace :: BuiltinBuilder
+genVreplace dst [_,Var vecArg,Var iArg,Var eArg] = do
+  dstType@(VecType len _) <- mkHType dst
+  let [dstName,vecName,iName,eName] = map (mkVHDLBasicId . varString) [dst,vecArg,iArg,eArg]
+  let ifCond = ExprBinary Equals (ExprVar "n") (ExprFunCall "to_integer" [ExprVar iName])
+  let thenB = Assign (ExprIndex dstName (ExprVar "n")) (ExprVar eName)
+  let elseB = Assign (ExprIndex dstName (ExprVar "n")) (ExprIndex vecName (ExprVar "n"))
+  let forSt = ForSt "n" 0 (toInteger $ len - 1) (IfSt ifCond thenB (Just elseB))
+  let comment = genComment dst "vreplace" [Var vecArg,Var iArg,Var eArg]
+  return ([comment,ProcessDecl (Right [forSt])],[])
+
+genVcons :: BuiltinBuilder
+genVcons dst [eArg,vArg] = do
   dstType <- mkHType dst
   let comment = genComment dst "(+>)" [eArg,vArg]
-  args' <- mapM varToExpr [eArg,vArg]
+  args' <- mapM varToExpr [vArg,eArg]
   let assignExpr = mkUncondAssign (dst,dstType) (ExprConcat args')
   return (comment:assignExpr,[])
 
