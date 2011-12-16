@@ -20,6 +20,7 @@ import qualified Type
 import CLaSH.Driver.PrepareBinding (prepareBinding)
 import CLaSH.Driver.Types
 import CLaSH.Netlist               (genNetlist)
+import CLaSH.Netlist.Tools         (zeroSignal)
 import CLaSH.Netlist.Types
 import CLaSH.Normalize             (normalize)
 import CLaSH.Util                  (curLoc,mapAccumLM,secondM)
@@ -127,7 +128,7 @@ genDecl n (ident,ClockType i) = [ NetDecl   ident      (ClockType i) (Just $ Exp
                                                        )
                                 ]
 
-genDecl _ (ident,ResetType i) = [ NetDecl   ident               (ResetType i) (Just $ ExprLit Nothing (ExprBit L))
+genDecl _ (ident,ResetType i) = [ NetDecl   ident               (ResetType i) Nothing
                                 , NetAssign "defaultClockReset" (ExprDelay
                                                                   [ (ExprLit Nothing (ExprBit L), 0.0)
                                                                   , (ExprLit Nothing (ExprBit H), (fromIntegral i) / 4.0)
@@ -135,7 +136,7 @@ genDecl _ (ident,ResetType i) = [ NetDecl   ident               (ResetType i) (J
                                                                 )
                                 ]
 
-genDecl _ (ident,hwType)      = [ NetDecl ident hwType (Just $ ExprAll (ExprLit Nothing (ExprBit L)))]
+genDecl _ (ident,hwType)      = [ NetDecl ident hwType (Just $ zeroSignal hwType)]
 
 genPortAssign ::
   (Ident, HWType)
