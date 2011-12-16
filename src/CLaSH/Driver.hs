@@ -26,7 +26,7 @@ import CLaSH.Driver.Types
 import CLaSH.Driver.Tools
 import CLaSH.Netlist                  (genNetlist)
 import CLaSH.Netlist.GenVHDL          (genVHDL,genTypes)
-import CLaSH.Netlist.Types            (empytNetlistState)
+import CLaSH.Netlist.Types            (Module(..),empytNetlistState)
 import CLaSH.Normalize                (normalize)
 import CLaSH.Util.CoreHW              (Var,Term,termType)
 import CLaSH.Util.Pretty              (pprString)
@@ -51,7 +51,8 @@ generateVHDL modName = do
         coreHWBindings            <- prepareBinding globalBindings topEntity
         (netlistState,normalized) <- normalize coreHWBindings empytNetlistState topEntity
         (netlist, elTypes,_)      <- genNetlist   netlistState    normalized topEntity Nothing
-        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (Maybe.listToMaybe $ map fst testInputs) (Maybe.listToMaybe $ map fst expectedOutputs) (head netlist)
+        let topNetlist            = head $ filter (\(Module modName _ _ _) -> modName == "topEntity_0") netlist
+        (testbench, tbTypes)      <- genTestbench globalBindings netlistState (Maybe.listToMaybe $ map fst testInputs) (Maybe.listToMaybe $ map fst expectedOutputs) topNetlist
         let usedTypes             = List.nub (tbTypes ++ elTypes)
         let (elTypesV,elTypesP)   = case usedTypes of [] -> ([],["work.all"]) ; htys -> (genTypes htys, ["work.types.all","work.all"])
         let vhdl                  = map (genVHDL elTypesP) (netlist ++ testbench)
