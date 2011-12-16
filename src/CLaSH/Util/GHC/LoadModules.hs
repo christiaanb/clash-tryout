@@ -21,7 +21,7 @@ loadModules modName =
   GHC.defaultErrorHandler DynFlags.defaultLogAction $
     GHC.runGhc (Just GHC.Paths.libdir) $ do
       dflags <- GHC.getSessionDynFlags
-      let dflags' = foldl DynFlags.xopt_set (dflags {GHC.simplPhases = 0}) [DynFlags.Opt_TemplateHaskell,DynFlags.Opt_Arrows]
+      let dflags' = foldl DynFlags.xopt_set (dflags {GHC.simplPhases = 0, DynFlags.ctxtStkDepth = 1000}) [DynFlags.Opt_TemplateHaskell,DynFlags.Opt_Arrows]
       GHC.setSessionDynFlags dflags'
       target <- GHC.guessTarget modName Nothing
       GHC.setTargets [target]
@@ -44,4 +44,4 @@ parseModule modSum = do
 disableOptimizationsFlags :: GHC.ModSummary -> GHC.ModSummary
 disableOptimizationsFlags ms@(GHC.ModSummary {..}) = ms {GHC.ms_hspp_opts = dflags}
   where
-    dflags = DynFlags.dopt_unset (ms_hspp_opts {DynFlags.optLevel = 0}) DynFlags.Opt_EnableRewriteRules
+    dflags = DynFlags.dopt_unset (ms_hspp_opts {DynFlags.optLevel = 0, DynFlags.ctxtStkDepth = 1000}) DynFlags.Opt_EnableRewriteRules
