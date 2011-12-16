@@ -86,6 +86,7 @@ data Bit = H | L | U | Z
 data Stmt = Assign LValue Expr
           | IfSt Expr Stmt (Maybe Stmt)
           | CaseSt Expr [([Expr],Stmt)] (Maybe Stmt)
+          | ForSt Ident Integer Integer Stmt
           | Seq [Stmt]
           | FunCallStmt Ident [Expr]
           | Assert Expr Expr Expr

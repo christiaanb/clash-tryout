@@ -217,6 +217,16 @@ stmt (Seq ss) = vcat (map stmt ss)
 stmt (Wait Nothing) = text "wait" <> semi
 stmt (Wait (Just t)) = text "wait for" <+> text (show t) <+> text "ns" <> semi
 stmt (Assert e i1 i2) = text "assert" <+> (expr e) <+> text "report" <+> parens (text "\"expected: \" &" <+> (expr i2) <+> text "& \", actual: \" &" <+> (expr i1)) <+> text "severity error" <> semi
+stmt (IfSt p t (Just e)) =
+  text "if" <+> expr p <+> text "then" $$
+  nest 2 (stmt t) $$
+  text "else" $$
+  nest 2 (stmt e) $$
+  text "end if" <> semi
+stmt (ForSt n l r st) =
+  text "for" <+> text n <+> text "in" <+> text (show l) <+> text "to" <+> text (show r) <+> text "loop" $$
+  nest 2 (stmt st) $$
+  text "end loop" <> semi
 
 to_bits :: Integral a => Int -> a -> [Bit]
 to_bits size val = map (\x -> if odd x then H else L)
