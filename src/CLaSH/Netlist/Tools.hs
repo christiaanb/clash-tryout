@@ -15,6 +15,7 @@ module CLaSH.Netlist.Tools
   , genUnaryOperator
   , dataconToExpr
   , htypeSize
+  , conSize
   , genComment
   , mkVHDLBasicId
   , toSLV
@@ -252,10 +253,11 @@ htypeSize (SumType _ [_])         = 0
 htypeSize (SumType _ fields)      = ceiling $ logBase 2 $ fromIntegral $ length fields
 htypeSize (ProductType _ fields)  = sum $ map htypeSize fields
 htypeSize (SPType "Integer" _)    = 32
-htypeSize (SPType _ fields)       = conSize + (maximum $ map (sum . map (htypeSize) . snd) fields)
-  where
-    conSize = ceiling $ logBase 2 $ fromIntegral $ length fields
+htypeSize t@(SPType _ fields)     = conSize t + (maximum $ map (sum . map (htypeSize) . snd) fields)
 htypeSize hwtype                  = error $ "htypeSize: " ++ show hwtype
+
+conSize :: HWType -> Size
+conSize (SPType _ fields) = ceiling $ logBase 2 $ fromIntegral $ length fields
 
 typeFieldRange ::
   HWType
