@@ -72,7 +72,7 @@ desugarExpr ::
   String
   -> CoreSyn.CoreExpr
   -> DesugarSession CoreSyn.CoreExpr
-desugarExpr bndrString expr = do
+desugarExpr bndrString expr = trace ("desugaring: " ++ bndrString) $ do
   rewritten <- runRewrite desugarStrategy startContext expr
   expr' <- case rewritten of
     Right (expr',_,_) -> return expr'
