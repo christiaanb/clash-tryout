@@ -21,10 +21,32 @@ builtinDataCons :: [String]
 builtinDataCons = ["I#","Int#","Signed","Unsigned"]
 
 builtinFuns :: [String]
-builtinFuns = ["timesInteger","plusInteger","xorB","andB","notB","orB","delay",
-  "+>>","vlast", "singleton", "empty", "+>","smallInteger","eqUnsigned",
-  "neqUnsigned","plusUnsigned", "minUnsigned", "timesUnsigned",
-  "negateUnsigned", "unsignedFromInteger", "absUnsigned", "signumUnsigned",
-  "eqSigned", "neqSigned","plusSigned", "minSigned", "timesSigned",
-  "negateSigned", "signedFromInteger", "absSigned", "signumSigned",
-  "vcopyn", "vcopy", "vfoldl", "vzipWith"]
+builtinFuns = concat
+  [ stateFuns
+  , bitFuns
+  , vecFuns
+  , unsignedFuns
+  , signedFuns
+  , literalFuns
+  ]
+  where
+    stateFuns = ["delay"]
+
+    bitFuns = ["xorB","andB","notB","orB"]
+
+    vecFuns =
+      [ "+>>","<<+","vinit","vlast","singleton","empty","+>","vcopyn"
+      , "vcopy","vfoldl","vzipWith","vmap","!","vreplace"
+      ]
+
+    unsignedFuns =
+      ["eqUnsigned","neqUnsigned","plusUnsigned","minUnsigned","timesUnsigned"
+      ,"negateUnsigned","unsignedFromInteger","absUnsigned","signumUnsigned"
+      ]
+
+    signedFuns =
+      ["eqSigned", "neqSigned","plusSigned", "minSigned", "timesSigned"
+      ,"negateSigned", "signedFromInteger", "absSigned", "signumSigned"
+      ]
+
+    literalFuns = ["timesInteger","plusInteger","smallInteger"]
