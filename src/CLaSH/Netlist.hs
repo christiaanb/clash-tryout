@@ -243,10 +243,14 @@ genApplication dst f args =  do
                       let argTys = snd . (!! dcI) $ conArgsPairs
                       dcExpr <- dataconToExpr dstType dc
                       args'' <- mapM varToExpr args'
+                      let fill = htypeSize dstType - (conSize dstType + sum (map htypeSize argTys))
+                      let fillExpr | fill > 0  = [ExprLit Nothing (ExprBitVector $ replicate fill L)]
+                                   | fill == 0 = []
+                                   | otherwise = error $ $(curLoc) ++ "Negative fill for type: " ++ show dstType
                       case (compare (length argTys) (length args'')) of
                         EQ -> do
                           let comment = genComment dst (pprString f) args
-                          return (comment:(mkUncondAssign (dst,dstType) (ExprConcat (dcExpr:args''))), [])
+                          return (comment:(mkUncondAssign (dst,dstType) (ExprConcat (dcExpr:args''++fillExpr))), [])
                         LT -> Error.throwError $ $(curLoc) ++ "Not in normal form: overapplied constructor: " ++ pprString (dst,f,args) ++ show argTys
                         GT -> Error.throwError $ $(curLoc) ++ "Not in normal form: underapplied constructor: " ++ pprString (dst,f,args') ++ show argTys
                     BitType -> simpleAssign dstType args'
