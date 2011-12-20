@@ -28,6 +28,7 @@ module CLaSH.Netlist.Tools
   , mkTempAssign
   , makeUnique
   , appendToName
+  , mkNewVar
   , mkTempVar
   , zeroSignal
   )
@@ -379,6 +380,12 @@ mkTempAssign hTy assignExpr = do
   t <- getAndModify nlVarCnt (+1)
   let dstName = "tmp_" ++ (show t)
   return (dstName, [NetDecl dstName hTy Nothing, NetAssign dstName assignExpr])
+
+mkNewVar :: String -> NetlistSession String
+mkNewVar v = do
+  t <- getAndModify nlVarCnt (+1)
+  let v' = v ++ "_" ++ (show t)
+  return v'
 
 mkTempVar :: Var -> NetlistSession Var
 mkTempVar v = do

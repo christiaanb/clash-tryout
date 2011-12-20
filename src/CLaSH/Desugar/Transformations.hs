@@ -1,6 +1,7 @@
 {-# LANGUAGE PatternGuards #-}
 module CLaSH.Desugar.Transformations
   ( inlineArrowBndr
+  , componentCastRemoval
   , arrDesugar
   , returnADesugar
   , hooksDesugar
@@ -8,6 +9,7 @@ module CLaSH.Desugar.Transformations
   , componentDesugar
   , loopDesugar
   , usedComponentDesugar
+  , blockRamDesugar
   )
 where
 
@@ -36,13 +38,19 @@ import CLaSH.Util.Core.Transform (changed, regenUniques, inlineBind)
 import CLaSH.Util.Pretty (pprString)
 
 builtinArrowFuns :: [String]
-builtinArrowFuns = ["arr","returnA",">>>","first","component","loop"]
+builtinArrowFuns = ["arr","returnA",">>>","first","component","loop","blockRam"]
 
 inlineArrowBndr :: DesugarStep
 inlineArrowBndr c expr@(Let (NonRec bndr val) res) | isArrowExpression expr =
   inlineBind "inlineArrow" (\(b,e) -> return $ b == bndr) c expr
 
 inlineArrowBndr c expr = fail "inlineArrowHooks"
+
+componentCastRemoval :: DesugarStep
+componentCastRemoval ctx (Cast e co) | isArrowExpression e =
+  changed "componentCastRemoval" e
+
+componentCastRemoval _ _ = fail "componentCastRemoval"
 
 arrDesugar :: DesugarStep
 arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do
@@ -180,8 +188,44 @@ usedComponentDesugar ctx expr
     case bodyMaybe of
       Nothing -> fail "usedComponentDesugar"
       Just body -> do
-        (newBndr,_) <- liftQ $ desugar' f
+        (newBndr,e) <- liftQ $ desugar' f
         let newExpr = MkCore.mkCoreApps (Var newBndr) args
-        changed "usedComponentDesugar" newExpr
+        changed ("usedComponentDesugar") newExpr
 
 usedComponentDesugar _ _ = fail "usedComponentDesugar"
+
+blockRamDesugar :: DesugarStep
+blockRamDesugar ctx expr@(App _ _)
+  | isArrowExpression expr
+  , (Var blockRam, args) <- CoreSyn.collectArgs expr
+  , (Name.getOccString blockRam) == "blockRam"
+  = do
+    let forallTy                                   = getTypeFail blockRam
+    let ([sizeTV,dataTV],[posDict],funTy)          = TcType.tcSplitSigmaTy forallTy
+    posDictId                                      <- liftQ $ mkInternalVar "posDict" (Type.mkPredTy posDict)
+    let ([sizeArgTy,clockArgTy],compTy)            = TcType.tcSplitFunTys funTy
+    let (compTC, [compInpTy,compOutpTy])           = TcType.tcSplitTyConApp compTy
+    [sizeId,clockId,inputId,outputId]              <- liftQ $ Monad.zipWithM mkInternalVar ["bsize","bclk","binp","boutp"] [sizeArgTy,clockArgTy,compInpTy,compOutpTy]
+    let (_, [dataInTy,wrTy,rdTy,weTy])             = TcType.tcSplitTyConApp compInpTy
+    [dataInSId,wrSId,rdSId,weSId]                  <- liftQ $ Monad.zipWithM mkInternalVar ["dataInS","wrS","rdS","weS"] [dataInTy,wrTy,rdTy,weTy]
+    let [dataInWild,wrWild,rdWild,weWild]          = map MkCore.mkWildValBinder [dataInTy,wrTy,rdTy,weTy]
+    let selections                                 = zip (zipWith (replaceAt [dataInWild,wrWild,rdWild,weWild]) [0..] [dataInSId,wrSId,rdSId,weSId]) [dataInSId,wrSId,rdSId,weSId]
+    let [dataInUnpack,wrUnpack,rdUnpack,weUnpack]  = map (\(sels,i) -> MkCore.mkSmallTupleSelector sels i (MkCore.mkWildValBinder compInpTy) (Var inputId)) selections
+    [dataInId,wrId,rdId,weId]                      <- liftQ $ Monad.zipWithM mkInternalVar ["dataIn","wr","rd","we"] [dataInTy,wrTy,rdTy,weTy]
+    bramFunc                                       <- liftQ $ mkBlockRam sizeTV dataTV clockArgTy wrTy weTy
+    let bramApp                                    = MkCore.mkCoreApps (Var bramFunc) $ map Type [sizeArgTy, dataInTy] ++ map Var [sizeId,clockId,dataInId,wrId,rdId,weId]
+    let letBndrs = Rec $ zip [dataInId,wrId,rdId,weId] [dataInUnpack,wrUnpack,rdUnpack,weUnpack] ++ [(outputId,bramApp)]
+    let resExpr = MkCore.mkCoreLams
+                    [sizeTV,dataTV,posDictId,sizeId,clockId,inputId]
+                    (MkCore.mkCoreLet letBndrs (Var outputId))
+    let newExpr = MkCore.mkCoreApps resExpr args
+    newBram <- liftQ $ mkFunction blockRam newExpr
+
+    changed "blockRamDesugar" (Var newBram)
+    where
+      replaceAt :: [a] -> Int -> a -> [a]
+      replaceAt [] _ _     = []
+      replaceAt (_:xs) 0 y = y:xs
+      replaceAt (x:xs) n y = x:(replaceAt xs (n-1) y)
+
+blockRamDesugar ctx expr = fail "blockRamDesugar"

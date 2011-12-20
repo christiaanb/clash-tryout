@@ -30,7 +30,7 @@ builtinFuns = concat
   , literalFuns
   ]
   where
-    stateFuns = ["delay"]
+    stateFuns = ["delayBuiltin","blockRamBuiltin"]
 
     bitFuns = ["xorB","andB","notB","orB"]
 

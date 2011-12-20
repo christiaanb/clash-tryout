@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module CLaSH.Builtin
   ( module Control.Arrow
   , module Control.Monad.Fix
@@ -19,6 +20,7 @@ module CLaSH.Builtin
   , Component
   , component
   , (^^^)
+  , blockRam
   , defaultClock
   , run
   , runWithDefault
@@ -109,6 +111,27 @@ f ^^^ initS = component f initS defaultClock
 {-# INLINE defaultClock #-}
 defaultClock :: Clock
 defaultClock = ClockUp "defaultClock" 1
+
+blockRam ::
+  forall nT a
+  . PositiveT nT
+  => nT
+  -> Clock
+  -> Component (a,Unsigned (Log2 nT), Unsigned (Log2 nT), Bit) a
+blockRam bSize clk = bram ^^^ bInit
+  where
+    bram :: (Vector nT a,a) -> (a, Unsigned (Log2 nT), Unsigned (Log2 nT), Bit) -> ((Vector nT a,a), a)
+    bram (ram,outp) (din,wr,rd,we) = ((ram',outp'),outp)
+      where
+        ram' | we == H   = vreplace ram wr din
+             | otherwise = ram
+        outp'            = ram!rd
+
+    bInit :: (Vector nT a,a)
+    bInit = (initErrors,error "blockRam: reading undefined initial value")
+
+    initErrors :: Vector nT a
+    initErrors = vmap (\i -> error $ "blockRam: reading undefined unitial value at location: " ++ show i) (viterate (+1) 0)
 
 run :: Component i o -> [(Clock,i)] -> [o]
 run (C _ hw) inps = go hw inps

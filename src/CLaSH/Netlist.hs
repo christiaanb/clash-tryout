@@ -32,7 +32,7 @@ import CLaSH.Driver.Types (DriverSession)
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached,first,second)
-import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals, getType, mkApps)
+import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals, getType, mkApps, fromTfpInt)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -328,7 +328,8 @@ builtinBuilders =
   , ("andB"               , (2, genBinaryOperator "andB" And))
   , ("orB"                , (2, genBinaryOperator "orB"  Or ))
   , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
-  , ("delay"              , (3, genDelay))
+  , ("delayBuiltin"       , (3, genDelay))
+  , ("blockRamBuiltin"    , (6 ,genBlockRam))
   , ("eqUnsigned"         , (3, \d args -> genBinaryOperator "(==)"  Equals d (tail args)))
   , ("neqUnsigned"        , (3, \d args -> genBinaryOperator "(/=)"  NotEquals d (tail args)))
   , ("plusUnsigned"       , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
@@ -369,6 +370,24 @@ genDelay state args@[Var initS, clock, Var stateP] = do
   let register   = ProcessDecl $ Left [(resetEvent,resetStmt),(clockEvent,clockStmt)]
   let comment    = genComment state "delay" args
   return $ ([comment,register],[(clockName,ClockType clockPeriod),(resetName,ResetType clockPeriod)])
+
+genBlockRam :: BuiltinBuilder
+genBlockRam dst args@[vSize, clock, Var dataInV, Var wrV, Var rdV, Var weV] = do
+  size <- fromTfpInt nlTfpSyn $ getTypeFail vSize
+  eType <- mkHType dst
+  let bramType = VecType (fromIntegral size) eType
+  bramName <- mkNewVar "ram_block"
+  (clockName,clockPeriod,clockEdge) <- parseClock clock
+  [dataIn,wr,rd,we,dataOut] <- mapM varToExpr [Var dataInV, Var wrV, Var rdV, Var weV, Var dst]
+  let clockEvent = Event (ExprVar clockName) clockEdge
+  let ramAtWr    = ExprIndex bramName (ExprFunCall "to_integer" [wr])
+  let ramAtRd    = ExprIndex bramName (ExprFunCall "to_integer" [rd])
+  let clockStmt  = Seq [ IfSt (ExprBinary Equals we (ExprLit Nothing (ExprBit H))) (Assign ramAtWr dataIn) Nothing
+                       , Assign dataOut ramAtRd
+                       ]
+  let bram    = ProcessDecl $ Left [(clockEvent,clockStmt)]
+  let comment = genComment dst "blockRam" args
+  return $ ([NetDecl bramName bramType Nothing,comment,bram],[(clockName, ClockType clockPeriod)])
 
 parseClock ::
   Term

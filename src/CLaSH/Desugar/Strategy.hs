@@ -23,7 +23,9 @@ desugarStrategy' :: Rewrite DesugarSession [CoreContext] CoreSyn.CoreExpr
 desugarStrategy' = extractR $ topdownR $ foldl1 (>->) $ map (tryR . promoteR . transformationStep) steps
   where
     steps = [ inlineArrowBndr
+            , componentCastRemoval
             , componentDesugar
+            , blockRamDesugar
             , arrDesugar
             , returnADesugar
             , hooksDesugar
