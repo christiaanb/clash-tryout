@@ -61,7 +61,13 @@ notB L = H
 notB H = L
 
 data Clock = ClockUp String Int | ClockDown String Int
-  deriving (Eq,Ord,Show)
+  deriving (Eq,Show)
+
+instance Ord Clock where
+  compare (ClockUp   s1 i1) (ClockUp   s2 i2) = case compare i1 i2 of EQ -> compare s1 s2; x -> x
+  compare (ClockUp   s1 i1) (ClockDown s2 i2) = case compare i1 i2 of EQ -> compare s1 s2; x -> x
+  compare (ClockDown s1 i1) (ClockUp   s2 i2) = case compare i1 i2 of EQ -> compare s1 s2; x -> x
+  compare (ClockDown s1 i1) (ClockDown s2 i2) = case compare i1 i2 of EQ -> compare s1 s2; x -> x
 
 data Component i o = C
   { domain :: Set.Set Clock
