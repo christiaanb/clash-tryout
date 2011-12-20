@@ -106,7 +106,7 @@ data NetlistState = NetlistState
   , _nlModCnt     :: Integer
   , _nlVarCnt     :: Integer
   , _nlTypeCnt    :: Integer
-  , _nlMods       :: Map Var Module
+  , _nlMods       :: Map Var (Module, [HWType])
   , _nlNormalized :: Map Var Term
   , _nlTfpSyn     :: Map OrdType Integer
   }

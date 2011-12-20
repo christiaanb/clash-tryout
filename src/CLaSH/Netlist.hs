@@ -45,14 +45,15 @@ genNetlist nlState normalized topEntity mStart = do
   let (retVal, nlState') = State.runState (Error.runErrorT (genModules topEntity mStart)) (nlState { _nlNormalized = Map.fromList normalized })
   case retVal of
     Left errMsg   -> error errMsg
-    Right netlist -> do
-      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType; _ -> False) . Map.elems . Label.get nlTypes $ nlState'
+    Right retVal -> do
+      let (netlist,hwTypes) = unzip retVal
+      let elTypes = List.nub . map (\(VecType _ e) -> e) . filter (\t -> case t of VecType _ e -> e /= BitType; _ -> False) . List.nub . concat $ hwTypes
       return (netlist,elTypes,nlState')
 
 genModules ::
   Var
   -> Maybe Integer
-  -> NetlistSession [Module]
+  -> NetlistSession [(Module, [HWType])]
 genModules topEntity mStart = do
   topMod <- genModule topEntity mStart
   allMods <- LabelM.gets nlMods
@@ -61,7 +62,7 @@ genModules topEntity mStart = do
 genModule ::
   Var
   -> Maybe Integer
-  -> NetlistSession Module
+  -> NetlistSession (Module, [HWType])
 genModule modName mStart = do
   modExprMaybe <- fmap (Map.lookup modName) $ LabelM.gets nlNormalized
   case modExprMaybe of
@@ -72,7 +73,7 @@ genModule' ::
   Var
   -> Term
   -> Maybe Integer
-  -> NetlistSession Module
+  -> NetlistSession (Module, [HWType])
 genModule' modName modExpr mStart = do
   LabelM.puts nlVarCnt (Maybe.fromMaybe 0 mStart)
   (args,binds,res)       <- (\m -> splitNormalized m >>= makeUnique) modExpr
@@ -87,7 +88,8 @@ genModule' modName modExpr mStart = do
   let modOutps     = [(resName,resType)]
   modDecls         <- mapM (\(d,_) -> mkHType d >>= \t -> return $ NetDecl (mkVHDLBasicId $ varString d) t Nothing) (filter ((/= res) . fst) binds)
   let modAssigns   = concat assigns
-  return $ Module modName' modInps modOutps (modDecls ++ modAssigns)
+  let hwtys        = List.nub $ map snd (modInps ++ modOutps) ++ foldl (\ts d -> case d of (NetDecl _ t _) -> t:ts; _ -> ts) [] (modDecls ++ modAssigns)
+  return $ (Module modName' modInps modOutps (modDecls ++ modAssigns), List.nub hwtys)
 
 mkConcSm ::
   CoreBinding
@@ -273,7 +275,7 @@ genApplication dst f args =  do
               if normalized
                 then do
                   vCnt <- LabelM.gets nlVarCnt
-                  modu@(Module modName modInps (modOutps:_) _)  <- genModule f Nothing
+                  (modu@(Module modName modInps (modOutps:_) _), _) <- genModule f Nothing
                   LabelM.puts nlVarCnt vCnt
                   let (clocks,clocksN)  = List.partition ((\a -> case a of (ClockType _) -> True; ResetType _ -> True; _ -> False) . snd) modInps
                   if (length clocks + length args) == (length modInps)
@@ -295,7 +297,7 @@ genApplication dst f args =  do
           if normalized
             then do
               vCnt <- LabelM.gets nlVarCnt
-              modu@(Module modName modInps [modOutps] _)  <- genModule f Nothing
+              (modu@(Module modName modInps (modOutps:_) _), _) <- genModule f Nothing
               LabelM.puts nlVarCnt vCnt
               let (clocks,clocksN)  = List.partition ((\a -> case a of ClockType _ -> True; ResetType _ -> True; _ -> False) . snd) modInps
               if (length clocks + length args) == (length modInps)
