@@ -78,7 +78,7 @@ genModule' modName modExpr mStart = do
   LabelM.puts nlVarCnt (Maybe.fromMaybe 0 mStart)
   (args,binds,res)       <- (\m -> splitNormalized m >>= makeUnique) modExpr
   (resType:argTypes)     <- mapM mkHType (res:args)
-  let (resName:argNames) = map varString (res:args)
+  let (resName:argNames) = map (mkVHDLBasicId . varString) (res:args)
   modCnt           <- LabelM.gets nlModCnt
   LabelM.modify nlModCnt (+1)
   let modName'     = ((++ (show modCnt)) . (\v -> if null v then (v ++ "Component_") else (v ++ "_")) . mkVHDLBasicId . varString) modName

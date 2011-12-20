@@ -419,7 +419,7 @@ primSpec ctx e@(App e1 e2)
   = do
     case prim of
       PrimFun _ -> fail "primSpec"
-      PrimCon _ -> fail "primSpel"
+      PrimCon _ -> fail "primSpec"
       _ -> do
         bodyMaybe <- liftQ $ getGlobalExpr f
         case bodyMaybe of

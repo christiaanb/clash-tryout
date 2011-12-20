@@ -195,7 +195,7 @@ inst _ (CommentDecl msg) = Just $
 	(vcat [ text "--" <+> text m | m <- lines msg ])
 
 inst _ (ClockDecl ident int e) = Just $
-  text ident <+> text "<= not" <+> text ident <+> text "after" <+> text (show $ (fromIntegral int) / 2.0) <+> text "ns when" <+> expr e
+  text ident <+> text "<= not" <+> text ident <+> text "after" <+> text (show $ (fromIntegral int) * 0.5) <+> text "ns when" <+> expr e
 
 inst _ _d = Nothing
 
@@ -217,6 +217,10 @@ stmt (Seq ss) = vcat (map stmt ss)
 stmt (Wait Nothing) = text "wait" <> semi
 stmt (Wait (Just t)) = text "wait for" <+> text (show t) <+> text "ns" <> semi
 stmt (Assert e i1 i2) = text "assert" <+> (expr e) <+> text "report" <+> parens (text "\"expected: \" &" <+> (expr i2) <+> text "& \", actual: \" &" <+> (expr i1)) <+> text "severity error" <> semi
+stmt (IfSt p t Nothing) =
+  text "if" <+> expr p <+> text "then" $$
+  nest 2 (stmt t) $$
+  text "end if" <> semi
 stmt (IfSt p t (Just e)) =
   text "if" <+> expr p <+> text "then" $$
   nest 2 (stmt t) $$
