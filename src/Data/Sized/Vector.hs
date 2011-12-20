@@ -215,22 +215,22 @@ vconcat = liftV (foldr ((++).unVec) [])
 vreverse :: Vector s a -> Vector s a
 vreverse = liftV reverse
 
-viterate :: NaturalT s => (a -> a) -> a -> Vector s a
+viterate :: PositiveT s => (a -> a) -> a -> Vector s a
 viterate = viteraten (undefined :: s)
 
-viteraten :: NaturalT s => s -> (a -> a) -> a -> Vector s a
+viteraten :: PositiveT s => s -> (a -> a) -> a -> Vector s a
 viteraten s f x = let s' = fromIntegerT s in Vector (take s' $ iterate f x)
 
-vgenerate :: NaturalT s => (a -> a) -> a -> Vector s a
+vgenerate :: PositiveT s => (a -> a) -> a -> Vector s a
 vgenerate = vgeneraten (undefined :: s)
 
-vgeneraten :: NaturalT s => s -> (a -> a) -> a -> Vector s a
+vgeneraten :: PositiveT s => s -> (a -> a) -> a -> Vector s a
 vgeneraten s f x = let s' = fromIntegerT s in Vector (take s' $ tail $ iterate f x)
 
-vcopy :: NaturalT s => a -> Vector s a
+vcopy :: PositiveT s => a -> Vector s a
 vcopy x = vcopyn (undefined :: s) x
 
-vcopyn :: NaturalT s => s -> a -> Vector s a
+vcopyn :: PositiveT s => s -> a -> Vector s a
 vcopyn s x = viteraten s id x
 
 vsplit :: ( NaturalT s
