@@ -113,7 +113,9 @@ run (C _ hw) inps = go hw inps
 
 runWithDefault :: Component i o -> [i] -> [o]
 runWithDefault c@(C clks _) =
-  if (Set.size clks) < 2 then
-    run c . zip (repeat defaultClock)
-  else
-    trace "== Warning ==\nRunning multi-clock design with only \"defaultClock\"\n" $ run c . zip (repeat defaultClock)
+  case (Set.size clks) of
+    0 -> run c . zip (repeat defaultClock)
+    1 -> let clk = Set.findMin clks
+         in run c . zip (repeat clk)
+    n -> let minClk = Set.findMin clks
+         in  trace ("== Warning ==\nRunning multi-clock(" ++ show n ++ ") design with one clock: " ++ show minClk) $ run c . zip (repeat minClk)
