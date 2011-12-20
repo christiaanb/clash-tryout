@@ -39,10 +39,13 @@ genTestbench globals nlState mStimuli mExpectedOutput (Module modName inps [modO
     Just stimuli -> do
       (decls,signals,mods,hwtypes,nlState') <- prepareSignals globals nlState stimuli Nothing
       let inpAssign   = case inps of
-                          -- Single input and clock
+                          -- Single input, clock & reset
                           [modInp,modClock@(_,ClockType clockRate),modReset] ->
-                            (NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (iterate (+(fromIntegral clockRate)) 0.0)):decls
-                          -- Clock only
+                            (NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (0:iterate (+(fromIntegral clockRate)) (fromIntegral clockRate * 0.6))):decls
+                          -- Single input & clock
+                          [modInp,modClock@(_,ClockType clockRate)] ->
+                            (NetAssign (fst modInp) $ ExprDelay $ zipWith ((,) . ExprVar) signals (0:iterate (+(fromIntegral clockRate)) (fromIntegral clockRate * 0.6))):decls
+                          -- Clock & reset only
                           [modClock@(_,ClockType clockRate),modReset] -> decls
                           -- Input only
                           [modInp] -> (NetAssign (fst modInp) (ExprVar $ head signals)):decls
@@ -56,15 +59,21 @@ genTestbench globals nlState mStimuli mExpectedOutput (Module modName inps [modO
     Just expectedOutput -> do
       (decls,signals,mods,hwtypes,_) <- prepareSignals globals nlState expectedOutput (Just $ Label.get nlVarCnt nlState')
       let assertStmt = ProcessDecl $ Right $ case inps of
-                        -- Single input and clock
+                        -- Single input, clock & reset
                         [modInp,modClock@(_,ClockType clockRate),modReset] -> concat
-                                                                              [ [Wait (Just $ fromIntegral clockRate / 2.0)]
+                                                                              [ [Wait (Just $ fromIntegral clockRate * 0.4)]
                                                                               , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals
                                                                               , [Wait Nothing]
                                                                               ]
-                        -- Clock only
+                        -- Single input & clock
+                        [modInp,modClock@(_,ClockType clockRate)] -> concat
+                                                                              [ [Wait (Just $ fromIntegral clockRate * 0.4)]
+                                                                              , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals
+                                                                              , [Wait Nothing]
+                                                                              ]
+                        -- Clock & reset only
                         [modClock@(_,ClockType clockRate),modReset]        -> concat
-                                                                              [ [Wait (Just $ fromIntegral clockRate / 2.0)]
+                                                                              [ [Wait (Just $ fromIntegral clockRate * 0.4)]
                                                                               , List.intersperse (Wait (Just $ fromIntegral clockRate)) $ map (\e -> genAssertion (fst modOutp) e) signals
                                                                               , [Wait Nothing]
                                                                               ]
@@ -72,6 +81,7 @@ genTestbench globals nlState mStimuli mExpectedOutput (Module modName inps [modO
                         [modInp]                                           -> [genAssertion (fst modOutp) $ head signals]
                         -- No input
                         []                                                 -> [genAssertion (fst modOutp) $ head signals]
+                        _  -> error $ $(curLoc) ++ "Can't make testbench for module with following inputs: " ++ show (modName,inps)
       return (assertStmt:decls,mods,hwtypes,length signals)
     Nothing -> return ([],[],[],0)
 
@@ -123,7 +133,7 @@ genDecl n (ident,ClockType i) = [ NetDecl   ident      (ClockType i) (Just $ Exp
                                                        )
                                 , NetAssign "finished" (ExprDelay
                                                           [(ExprLit Nothing (ExprBit H)
-                                                          , fromIntegral n)
+                                                          ,(fromIntegral n - 0.5) * fromIntegral i)
                                                           ]
                                                        )
                                 ]
@@ -131,7 +141,7 @@ genDecl n (ident,ClockType i) = [ NetDecl   ident      (ClockType i) (Just $ Exp
 genDecl _ (ident,ResetType i) = [ NetDecl   ident               (ResetType i) Nothing
                                 , NetAssign "defaultClockReset" (ExprDelay
                                                                   [ (ExprLit Nothing (ExprBit L), 0.0)
-                                                                  , (ExprLit Nothing (ExprBit H), (fromIntegral i) / 4.0)
+                                                                  , (ExprLit Nothing (ExprBit H), (fromIntegral i) * 0.25)
                                                                   ]
                                                                 )
                                 ]
