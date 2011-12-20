@@ -53,8 +53,10 @@ desugar globals bndr = do
     Right _ -> do
       let uniqSupply'     = Label.get tsUniqSupply tState
       let transformations = Label.get tsTransformCounter tState
+      let desugared       = Label.get dsDesugared dState
+      let globals'        = Label.get dsBindings dState
       LabelM.puts drUniqSupply uniqSupply'
-      return $ trace ("Desugar transformations: " ++ show transformations) $ (Label.get dsDesugared dState) `Map.union` globals
+      return $ trace ("Desugar transformations: " ++ show transformations) $ desugared `Map.union` globals'
 
 desugar' ::
   CoreSyn.CoreBndr
