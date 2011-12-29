@@ -105,8 +105,8 @@ isBox tyThing = case getType tyThing of
   Nothing -> False
   Just ty -> isBox' ty
 
-isBox' ty | tyHasFreeTyVars ty                      = False
-          | Maybe.isJust (Type.splitFunTy_maybe ty) = False
+isBox' ty | tyHasFreeTyVars ty                         = False
+          | Maybe.isJust (Type.splitFunTy_maybe ty)    = False
           | Maybe.isJust (Type.splitForAllTy_maybe ty) = False
           | otherwise = case Type.splitTyConApp_maybe ty of
   Just (tyCon, args) -> case Maybe.catMaybes (map Type.splitFunTy_maybe args) of
