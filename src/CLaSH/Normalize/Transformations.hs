@@ -231,16 +231,20 @@ funcLift ctx e
 funcLift _ _ = fail "funcLift"
 
 classopresolution c expr@(App (TyApp (Var sel) ty) dict) = do
-  case (Id.isClassOpId_maybe sel) of
-    Just cls -> do
-      let selectorIds = Class.classAllSelIds cls
-      let selIdN = List.elemIndex sel selectorIds
-      case selIdN of
-        Just n -> do
-          selCase <- liftQ $ mkSelCase "classopresolution" dict 0 n
-          changed "classopresolution" expr selCase
+  case (collectArgs dict) of
+    (Prim _, _) -> fail "classopresolution"
+    _ -> do
+      case (Id.isClassOpId_maybe sel) of
+        Just cls -> do
+          let selectorIds = Class.classAllSelIds cls
+          let selIdN = List.elemIndex sel selectorIds
+          let isBuiltin = (varString sel) `elem` builtinIds
+          case (selIdN,isBuiltin) of
+            (Just n, False) -> do
+              selCase <- liftQ $ mkSelCase "classopresolution" dict 0 n
+              changed ("classopresolution: " ++ varString sel) expr selCase
+            _ -> fail "classopresolution"
         Nothing -> fail "classopresolution"
-    Nothing -> fail "classopresolution"
 
 classopresolution _ _ = fail "classopresolution"
 
