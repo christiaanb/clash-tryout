@@ -63,7 +63,7 @@ import qualified VarSet
 import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
-import CLaSH.Util (curLoc, partitionM, secondM, second)
+import CLaSH.Util (curLoc, partitionM, secondM, second, eitherM)
 import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple)
 import CLaSH.Util.Pretty (pprString)
 
@@ -424,7 +424,9 @@ primSpec ctx e@(App e1 e2)
         bodyMaybe <- liftQ $ getGlobalExpr f
         case bodyMaybe of
           Just body -> do
-            let newBody = mkApps body [Left (Prim prim)]
+            argParams <- liftQ $ mapM (eitherM (mkBinderFor "pPS") (mkTyBinderFor "pPS")) args
+            let newArgs = zipWith (\a b -> case a of Left _ -> Left (Var b); Right _ -> Right $ Type.mkTyVarTy b) args argParams
+            let newBody = mkLams argParams $ mkApps body $ newArgs ++ [Left e2]
             newf <- liftQ $ mkFunction f newBody
             let newExpr = mkApps (Var newf) args
             changed "primSpec" e newExpr

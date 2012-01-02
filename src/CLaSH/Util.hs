@@ -139,3 +139,12 @@ getAndModify lens modifier = do
   a <- Label.gets lens
   Label.modify lens modifier
   return a
+
+eitherM ::
+  Monad m
+  => (a -> m c)
+  -> (b -> m c)
+  -> Either a b
+  -> m c
+eitherM f g (Left a)  = f a
+eitherM f g (Right b) = g b
