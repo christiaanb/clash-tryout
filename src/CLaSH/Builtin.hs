@@ -3,6 +3,7 @@
 module CLaSH.Builtin
   ( module Control.Arrow
   , module Control.Monad.Fix
+  , module Data.Bits
   , module Data.Sized.Integer
   , module Data.Sized.Vector
   , module Data.Sized.Unsigned
@@ -31,6 +32,7 @@ where
 import Control.Arrow (Arrow,arr,first,ArrowLoop,loop,(>>>),returnA)
 import Control.Category (Category,(.),id)
 import Control.Monad.Fix (mfix)
+import Data.Bits hiding (shiftL,shiftR)
 import qualified Data.Set as Set
 import Debug.Trace (trace)
 import Language.Haskell.TH.Lift

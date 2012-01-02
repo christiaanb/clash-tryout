@@ -32,7 +32,7 @@ builtinFuns = concat
   where
     stateFuns = ["delayBuiltin","blockRamBuiltin"]
 
-    bitFuns = ["xorB","andB","notB","orB"]
+    bitFuns = ["xorB","andB","notB","orB",".&.","xor"]
 
     vecFuns =
       [ "+>>","<<+","vinit","vlast","singleton","empty","+>","vcopyn"
