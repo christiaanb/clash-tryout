@@ -116,7 +116,7 @@ termType e = case e of
   Case _ ty _   -> ty
   LetRec _ e    -> termType e
   App _ _       -> case collectArgs e of
-                    (fun, args) -> applyTypeToArgs (termType fun) args
+                    (fun, args) -> applyTypeToArgs (pprString e) (termType fun) args
 
 primType p = case p of
   PrimFun  x -> idType x
@@ -125,12 +125,12 @@ primType p = case p of
   PrimDFun x -> idType x
   PrimCo   x -> coercionType x
 
-applyTypeToArgs :: Type -> [Either Term Type] -> Type
-applyTypeToArgs opTy []              = opTy
-applyTypeToArgs opTy (Right ty:args) = applyTypeToArgs (opTy `applyTy` ty) args
-applyTypeToArgs opTy (Left e:args)   = case splitFunTy_maybe opTy of
-    Just (_, resTy) -> applyTypeToArgs resTy args
-    Nothing         -> error $ "applyTypeToArgs splitFunTy" ++ pprString opTy
+applyTypeToArgs :: String -> Type -> [Either Term Type] -> Type
+applyTypeToArgs _ opTy []              = opTy
+applyTypeToArgs msg opTy (Right ty:args) = applyTypeToArgs msg (opTy `applyTy` ty) args
+applyTypeToArgs msg opTy (Left e:args)   = case splitFunTy_maybe opTy of
+    Just (_, resTy) -> applyTypeToArgs msg resTy args
+    Nothing         -> error $ "applyTypeToArgs splitFunTy: " ++ pprString opTy ++ "\n" ++ msg
 
 applyFunTy ::
   Type
