@@ -117,13 +117,13 @@ blockRam ::
   . PositiveT nT
   => nT
   -> Clock
-  -> Component (a,Unsigned (Log2 nT), Unsigned (Log2 nT), Bit) a
+  -> Component (a,Unsigned (Log2 nT), Unsigned (Log2 nT), Bool) a
 blockRam bSize clk = bram ^^^ bInit
   where
-    bram :: (Vector nT a,a) -> (a, Unsigned (Log2 nT), Unsigned (Log2 nT), Bit) -> ((Vector nT a,a), a)
+    bram :: (Vector nT a,a) -> (a, Unsigned (Log2 nT), Unsigned (Log2 nT), Bool) -> ((Vector nT a,a), a)
     bram (ram,outp) (din,wr,rd,we) = ((ram',outp'),outp)
       where
-        ram' | we == H   = vreplace ram wr din
+        ram' | we        = vreplace ram wr din
              | otherwise = ram
         outp'            = ram!rd
 

@@ -377,17 +377,19 @@ genBlockRam dst args@[vSize, clock, Var dataInV, Var wrV, Var rdV, Var weV] = do
   eType <- mkHType dst
   let bramType = VecType (fromIntegral size) eType
   bramName <- mkNewVar "ram_block"
+  weName   <- mkNewVar "we"
   (clockName,clockPeriod,clockEdge) <- parseClock clock
   [dataIn,wr,rd,we,dataOut] <- mapM varToExpr [Var dataInV, Var wrV, Var rdV, Var weV, Var dst]
   let clockEvent = Event (ExprVar clockName) clockEdge
   let ramAtWr    = ExprIndex bramName (ExprFunCall "to_integer" [wr])
   let ramAtRd    = ExprIndex bramName (ExprFunCall "to_integer" [rd])
-  let clockStmt  = Seq [ IfSt (ExprBinary Equals we (ExprLit Nothing (ExprBit H))) (Assign ramAtWr dataIn) Nothing
+  let weAssign   = NetAssign weName (ExprCond we (ExprLit Nothing (ExprBit H)) (ExprLit Nothing (ExprBit L)))
+  let clockStmt  = Seq [ IfSt (ExprBinary Equals (ExprVar weName) (ExprLit Nothing (ExprBit H))) (Assign ramAtWr dataIn) Nothing
                        , Assign dataOut ramAtRd
                        ]
   let bram    = ProcessDecl $ Left [(clockEvent,clockStmt)]
   let comment = genComment dst "blockRam" args
-  return $ ([NetDecl bramName bramType Nothing,comment,bram],[(clockName, ClockType clockPeriod)])
+  return $ ([NetDecl bramName bramType Nothing,NetDecl weName BitType Nothing,comment,weAssign,bram],[(clockName, ClockType clockPeriod)])
 
 parseClock ::
   Term
