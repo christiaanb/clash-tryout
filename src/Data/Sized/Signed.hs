@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PatternGuards       #-}
 
 module Data.Sized.Signed
   ( Signed
