@@ -21,48 +21,67 @@ normalizeStrategy = foldl1 (>->) steps
   where
     steps = [ reprStrategy
             , keepTrying ((bottomupTry classopresolution) !-> reprStrategy)
-            , netlistStrategy
+            , simplifyStrategy
             ]
 
 reprStrategy ::
   Rewrite NormalizeSession [CoreContext] Term
-reprStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
+reprStrategy = keepTrying $ foldl1 (>->) steps
   where
-    steps = [ iotaReduce
-            , betaReduce
-            , caseApp
-            , caseLet
-            , caseLam
-            , caseCon
-            , caseCase
-            , letApp
-            , letLam
-            , bindLam
-            , bindBox
-            , inlineBox
-            , etaExpand
-            , funcSpec
-            , typeSpec
-            , funcLift
+    steps = [ typePropStrategy
+            , firstOrderStrategy
             ]
 
-netlistStrategy ::
+typePropStrategy ::
   Rewrite NormalizeSession [CoreContext] Term
-netlistStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
+typePropStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
   where
-    steps = [ retLam
-            , retLet
-            , retVar
-            , inlineVar
-            , emptyLet
-            , letFlat
-            , deadCode
-            , scrutSimpl
-            , caseSimpl
-            , caseRemove
-            , appSimpl
+    steps = [ lamApp
             , letApp
-            , bindUntranslatable
-            , inlineUntranslatable
-            , primSpec
+            , caseApp
+            , iotaReduce
+            , letTyApp
+            , caseTyApp
+            , bindPoly
+            , typeSpec
+            ]
+
+firstOrderStrategy ::
+  Rewrite NormalizeSession [CoreContext] Term
+firstOrderStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
+  where
+    steps = [ lamApp
+            , letApp
+            , caseApp
+            , caseLet
+            , caseCon
+            , caseCase
+            , inlineBox
+            , bindFun
+            , funSpec
+            ]
+
+simplifyStrategy ::
+  Rewrite NormalizeSession [CoreContext] Term
+simplifyStrategy = keepTrying $ foldl1 (>->) $ map bottomupTry steps
+  where
+    steps = [ lamApp
+            , letApp
+            , caseApp
+            , deadCode
+            , bindNonRep
+            , nonRepSpec
+            , inlineNonRep
+            , funcLift
+            , etaExpand
+            , appSimpl
+            , retLam
+            , retLet
+            , letFlat
+            , inlineVar
+            , letLam
+            , caseLam
+            , scrutSimpl
+            , caseRemove
+            , caseSimpl
             ]

@@ -22,8 +22,8 @@ instance Outputable Term where
   pprPrec prec e = case e of
     Var x         -> pprPrec prec x
     Prim x        -> pprPrec prec x
-    TyLambda x e  -> pprPrecLam prec [x] e
-    Lambda x e    -> pprPrecLam prec [x] e
+    TyLambda x e  -> pprPrecLam True  prec [x] e
+    Lambda x e    -> pprPrecLam False prec [x] e
     Data dc       -> pprPrec prec dc
     Literal l     -> pprPrec prec l
     TyApp e ty    -> pprPrecApp prec e ty
@@ -74,8 +74,8 @@ pprBndr bs x = prettyParen needsParens $ ppr x <+> text "::" <+> ppr (varType x)
                                  CaseBind   -> True
                                  LetBind    -> False
 
-pprPrecLam :: Outputable a => Rational -> [Var] -> a -> SDoc
-pprPrecLam prec xs e = prettyParen (prec > noPrec) $ text "\\" <> hsep [pprBndr LambdaBind y | y <- xs] <+> (text "->") $+$ (pprPrec noPrec e)
+pprPrecLam :: Outputable a => Bool -> Rational -> [Var] -> a -> SDoc
+pprPrecLam big prec xs e = prettyParen (prec > noPrec) $ (if big then (text "/" <>) else id) $ text "\\" <> hsep [pprBndr LambdaBind y | y <- xs] <+> (text "->") $+$ (pprPrec noPrec e)
 
 pprPrecApps :: (Outputable a, Outputable b) => Rational -> a -> [b] -> SDoc
 pprPrecApps prec e1 es2 = prettyParen (not (null es2) && prec >= appPrec) $ pprPrec opPrec e1 <+> hsep (map (pprPrec appPrec) es2)

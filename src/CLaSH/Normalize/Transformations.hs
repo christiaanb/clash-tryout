@@ -1,38 +1,41 @@
 {-# LANGUAGE PatternGuards #-}
 module CLaSH.Normalize.Transformations
-  ( iotaReduce
-  , betaReduce
+  ( -- Shared Transformations
+    lamApp
+  , letApp
   , caseApp
+    -- Type Propagation Transformations
+  , iotaReduce
+  , letTyApp
+  , caseTyApp
+  , bindPoly
+  , typeSpec
+    -- Defunctionalisation Transformations
   , caseLet
-  , caseLam
   , caseCon
   , caseCase
-  , letApp
-  , letLam
-  , bindLam
-  , bindBox
   , inlineBox
+  , bindFun
+  , funSpec
+    -- Simplification Transformations
+  , deadCode
   , etaExpand
-  , funcSpec
-  , typeSpec
+  , appSimpl
+  , bindNonRep
+  , nonRepSpec
+  , inlineNonRep
   , funcLift
-
-  , classopresolution
-
+  , letFlat
   , retLam
   , retLet
-  , retVar
   , inlineVar
-  , emptyLet
-  , letFlat
-  , deadCode
+  , letLam
+  , caseLam
   , scrutSimpl
   , caseSimpl
   , caseRemove
-  , appSimpl
-  , bindUntranslatable
-  , primSpec
-  , inlineUntranslatable
+  -- ClassOp Resolution
+  , classopresolution
   )
 where
 
@@ -64,44 +67,69 @@ import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, partitionM, secondM, second, eitherM)
-import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple)
+import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple, applyForAllTy)
 import CLaSH.Util.Pretty (pprString)
 
-iotaReduce :: NormalizeStep
-iotaReduce ctx e@(TyApp (TyLambda tv expr) t) = substituteType tv t ctx expr >>= (changed "iota" e)
-iotaReduce _ _ = fail "betaTy"
 
-betaReduce :: NormalizeStep
-betaReduce ctx e@(App (Lambda bndr expr) arg)   = changed "beta" e $ LetRec [(bndr,arg)] expr
-betaReduce _ _ = fail "beta"
+-- Shared Transformations
+lamApp :: NormalizeStep
+lamApp ctx e@(App (Lambda bndr expr) arg)    = changed "lamApp" e $ LetRec [(bndr,arg)] expr
+lamApp _ _ = fail "lamApp"
+
+letApp :: NormalizeStep
+letApp ctx e@(App (LetRec binds expr) arg)   = changed "letApp" e $ LetRec binds (App expr arg)
+letApp _ _ = fail "letApp"
 
 caseApp :: NormalizeStep
-caseApp ctx e@(App (Case scrut ty alts) arg)   = changed "caseApp" e $ Case scrut ty' alts'
-  where
-    alts' = map (second (`App` arg)) alts
-    ty'   = applyFunTy ty (termType arg)
-
-caseApp ctx e@(TyApp (Case scrut ty alts) ty') = liftQ $ Error.throwError $ $(curLoc) ++ "What's a TyApp doing at a case expression?: " ++ pprString e
+caseApp ctx e@(App (Case scrut ty alts) arg) = do
+  argBndr <- liftQ $ mkBinderFor "caseApp" arg
+  let alts'   = map (second (`App` (Var argBndr))) alts
+  let ty'     = applyFunTy ty (termType arg)
+  let resExpr = LetRec [(argBndr,arg)] (Case scrut ty' alts')
+  changed "caseApp" e resExpr
 caseApp _ _ = fail "caseApp"
 
+-- Type information propagation transformations
+iotaReduce :: NormalizeStep
+iotaReduce ctx e@(TyApp (TyLambda tv expr) t) = substituteType tv t ctx expr >>= (changed "iota" e)
+iotaReduce _ _ = fail "iota"
+
+letTyApp :: NormalizeStep
+letTyApp ctx e@(TyApp (LetRec binds expr) ty) = changed "letTyApp" e $ LetRec binds (TyApp expr ty)
+letTyApp _ _ = fail "letTyApp"
+
+caseTyApp :: NormalizeStep
+caseTyApp ctx e@(TyApp (Case scrut ty alts) ty') = changed "caseTyApp" e $ Case scrut ty'' alts'
+  where
+    alts' = map (second (`TyApp` ty')) alts
+    ty''  = applyForAllTy ty ty'
+caseTyApp _ _ = fail "caseTyApp"
+
+bindPoly :: NormalizeStep
+bindPoly = inlineBind "bindPoly" (return . isPoly . snd)
+
+typeSpec :: NormalizeStep
+typeSpec ctx e@(TyApp e1 ty)
+  | (Var f, args) <- collectArgs e1
+  , not . tyHasFreeTyVars $ ty
+  , (eArgs, []) <- Either.partitionEithers args
+  = do
+    bodyMaybe <- liftQ $ getGlobalExpr f
+    case bodyMaybe of
+      Just body -> do
+        argParams <- liftQ $ mapM (mkBinderFor "pTS") eArgs
+        let newBody = mkLams argParams $ mkApps body $ map (Left . Var) argParams ++ [Right ty]
+        newf <- liftQ $ mkFunction f newBody
+        let newExpr = mkApps (Var newf) args
+        changed "typeSpec" e newExpr
+      Nothing -> fail "typeSpec"
+
+typeSpec _ _ = fail "typeSpec"
+
+-- Defunctionalisation transformations
 caseLet :: NormalizeStep
-caseLet ctx e@(Case (LetRec binds res) ty alts) = changed "caseLet" e $ LetRec binds (Case res ty alts)
+caseLet ctx e@(Case (LetRec binds res) ty alts) | isBox res = changed "caseLet" e $ LetRec binds (Case res ty alts)
 caseLet _ _ = fail "caseLet"
-
-caseLam :: NormalizeStep
-caseLam ctx e@(Case scrut ty alts) = do
-  let altsWithLam = List.partition isLam . map snd $ alts
-  case altsWithLam of
-    ([],_)                 -> fail "caseLam"
-    (TyLambda tv e:rest,_) -> liftQ $ Error.throwError $ $(curLoc) ++ "What's a TyLambda doing in a case alternative?: " ++ pprString e
-    (Lambda bndr e:rest,_) -> do
-      bndr' <- liftQ $ cloneVar bndr
-      let ty' = applyFunTy ty (Id.idType bndr)
-      let alts' = map (second (`App` (Var bndr'))) alts
-      let newExpr = Lambda bndr' (Case scrut ty' alts')
-      changed "caseLam" e newExpr
-
-caseLam _ _ = fail "caseLam"
 
 caseCon :: NormalizeStep
 caseCon ctx e@(Case scrut ty alts) | (Data dc, args) <- collectExprArgs scrut = do
@@ -125,28 +153,12 @@ caseCon ctx e@(Case scrut ty alts) | (Data dc, args) <- collectExprArgs scrut = 
 caseCon _ _ = fail "caseCon"
 
 caseCase :: NormalizeStep
-caseCase ctx e@(Case (Case scrut ty1 alts1) ty2 alts2) = do
+caseCase ctx e@(Case (Case scrut ty1 alts1) ty2 alts2) | isBox ty1 = do
   let newAlts = map (second (\altE -> Case altE ty2 alts2)) alts1
   let newExpr = Case scrut ty2 newAlts
   changed "caseCase" e newExpr
 
 caseCase _ _ = fail "caseCase"
-
-letApp :: NormalizeStep
-letApp ctx e@(App (LetRec binds expr) arg)  = changed "letApp" e $ LetRec binds (App expr arg)
-letApp ctx e@(TyApp (LetRec binds expr) ty) = changed "letApp" e $ LetRec binds (TyApp expr ty)
-letApp _ _ = fail "letApp"
-
-letLam :: NormalizeStep
-letLam ctx e@(LetRec binds (Lambda bndr body)) = changed "letLam" e $ Lambda bndr $ LetRec binds body
-letLam ctx e@(LetRec binds (TyLambda tv body)) = changed "letLam" e $ TyLambda tv $ LetRec binds body
-letLam _ _ = fail "letLam"
-
-bindLam :: NormalizeStep
-bindLam = inlineBind "bindLam" (return . isLam . snd)
-
-bindBox :: NormalizeStep
-bindBox = inlineBind "bindBox" (return . isBox . snd)
 
 inlineBox :: NormalizeStep
 inlineBox ctx e@(Case scrut ty alts)
@@ -162,6 +174,43 @@ inlineBox ctx e@(Case scrut ty alts)
 
 inlineBox _ _ = fail "inlineBox"
 
+bindFun :: NormalizeStep
+bindFun = inlineBind "bindFun" (return . (\e -> isBox e || isFun e) . snd)
+
+
+funSpec :: NormalizeStep
+funSpec ctx e@(App e1 e2)
+  | (Var f, args) <- collectArgs e1
+  , isBox e2 || isFun e2
+  = do
+    bodyMaybe <- liftQ $ getGlobalExpr f
+    case bodyMaybe of
+      Just body -> do
+        localFVs <- liftQ $ localFreeVars e2
+        argParams <- liftQ $ mapM (mkBinderFor "pFS") $ Either.lefts args
+        let newBody = mkLams (argParams ++ localFVs) $ mkApps body $ map (Left . Var) argParams ++ [Left e2]
+        newf <- liftQ $ mkFunction f newBody
+        let newExpr = mkApps (Var newf) $ args ++ (map (Left . Var) localFVs)
+        changed "funSpec" e newExpr
+      Nothing -> fail "funSpec"
+
+funSpec _ _ = fail "funcSpec"
+
+-- Simplification transformations
+deadCode :: NormalizeStep
+deadCode ctx expr@(LetRec binds res) = do
+  let binds' = filter doBind binds
+  case (length binds /= length binds') of
+    True ->
+      changed "deadCode" expr (LetRec binds' res)
+    False ->
+      fail "deadCode"
+  where
+    boundExprs      = map snd binds
+    doBind (bndr,_) = any (exprUsesBinders [bndr]) (res:boundExprs)
+
+deadCode _ _ = fail "deadCode"
+
 etaExpand :: NormalizeStep
 etaExpand (AppFirst:cs)  expr = fail "eta"
 etaExpand (AppSecond:cs) expr = fail "eta"
@@ -173,43 +222,60 @@ etaExpand ctx expr | isFun expr && not (isLam expr) = do
 
 etaExpand ctx expr = fail "eta"
 
-funcSpec :: NormalizeStep
-funcSpec ctx e@(App e1 e2)
+appSimpl :: NormalizeStep
+appSimpl ctx e@(App appf arg)
+  | (f, _) <- collectArgs appf
+  , isVar f || isCon f || isPrimCon f || isPrimFun f = do
+    localVar <- liftQ $ isLocalVar arg
+    untranslatable <- liftQ $ isUntranslatable arg
+    case localVar || untranslatable of
+      True  -> fail "appSimpl"
+      False -> do
+        argId <- liftQ $ mkBinderFor "arg" arg
+        changed "appSimpl" e (LetRec [(argId,arg)] (App appf (Var argId)))
+
+appSimpl _ _ = fail "appSimpl"
+
+bindNonRep :: NormalizeStep
+bindNonRep = inlineBind ("bindNonRep") (isUntranslatable . fst)
+
+-- Specialize functions on untranslatable arguments
+nonRepSpec :: NormalizeStep
+nonRepSpec ctx e@(App e1 e2)
   | (Var f, args) <- collectArgs e1
-  , isBox e2 || isFun e2
-  , not . tyHasFreeTyVars . getTypeFail $ e2
-  , (eArgs,[]) <- Either.partitionEithers args
   = do
-    bodyMaybe <- liftQ $ getGlobalExpr f
-    case bodyMaybe of
-      Just body -> do
+    untranslatable <- liftQ $ isUntranslatable e2
+    bodyMaybe      <- liftQ $ getGlobalExpr f
+    case (untranslatable,bodyMaybe) of
+      (True, Just body) -> do
         localFVs <- liftQ $ localFreeVars e2
-        argParams <- liftQ $ mapM (mkBinderFor "pFS") eArgs
-        let newBody = mkLams (argParams ++ localFVs) $ mkApps body $ map (Left . Var) argParams ++ [Left e2]
+        argParams <- liftQ $ mapM (eitherM (mkBinderFor "pNRS") (mkTyBinderFor "pNRS")) args
+        let newArgs = zipWith (\a b -> case a of Left _ -> Left (Var b); Right _ -> Right $ Type.mkTyVarTy b) args argParams
+        let newBody = mkLams (argParams ++ localFVs) $ mkApps body $ newArgs ++ [Left e2]
         newf <- liftQ $ mkFunction f newBody
         let newExpr = mkApps (Var newf) $ args ++ (map (Left . Var) localFVs)
-        changed "funSpec" e newExpr
-      Nothing -> fail "funSpec"
+        changed "nonRepSpec" e newExpr
+      _ -> fail "nonRepSpec"
 
-funcSpec _ _ = fail "funcSpec"
+nonRepSpec _ _ = fail "nonRepSpec"
 
-typeSpec :: NormalizeStep
-typeSpec ctx e@(TyApp e1 ty)
-  | (Var f, args) <- collectArgs e1
-  , not . tyHasFreeTyVars $ ty
-  , (eArgs, []) <- Either.partitionEithers args
+-- Inline non-representable expressions in Primitive applications
+inlineNonRep :: NormalizeStep
+inlineNonRep ctx e@(App e1 e2)
+  | (Prim _, _)   <- collectArgs e1
+  , (Var f, args) <- collectArgs e2
+  , not (isApplicable e2)
   = do
-    bodyMaybe <- liftQ $ getGlobalExpr f
-    case bodyMaybe of
-      Just body -> do
-        argParams <- liftQ $ mapM (mkBinderFor "pTS") eArgs
-        let newBody = mkLams argParams $ mkApps body $ map (Left . Var) argParams ++ [Right ty]
-        newf <- liftQ $ mkFunction f newBody
-        let newExpr = mkApps (Var newf) args
-        changed "typeSpec" e newExpr
-      Nothing -> fail "typeSpec"
+   untranslatable <- liftQ $ isUntranslatable e2
+   bodyMaybe      <- liftQ $ getGlobalExpr f
+   case (untranslatable,bodyMaybe) of
+     (True,Just body) -> do
+       let newBody = mkApps body args
+       let newExpr = App e1 newBody
+       changed "inlineNonRep" e newExpr
+     _ -> fail "inlineNonRep"
 
-typeSpec _ _ = fail "typeSpec"
+inlineNonRep _ _ = fail "inlineNonRep"
 
 funcLift :: NormalizeStep
 funcLift ctx e
@@ -229,24 +295,6 @@ funcLift ctx e
     doArg arg = return arg
 
 funcLift _ _ = fail "funcLift"
-
-classopresolution c expr@(App (TyApp (Var sel) ty) dict) = do
-  case (collectArgs dict) of
-    (Prim _, _) -> fail "classopresolution"
-    _ -> do
-      case (Id.isClassOpId_maybe sel) of
-        Just cls -> do
-          let selectorIds = Class.classAllSelIds cls
-          let selIdN = List.elemIndex sel selectorIds
-          let isBuiltin = (varString sel) `elem` builtinIds
-          case (selIdN,isBuiltin) of
-            (Just n, False) -> do
-              selCase <- liftQ $ mkSelCase "classopresolution" dict 0 n
-              changed ("classopresolution: " ++ varString sel) expr selCase
-            _ -> fail "classopresolution"
-        Nothing -> fail "classopresolution"
-
-classopresolution _ _ = fail "classopresolution"
 
 retLam :: NormalizeStep
 retLam ctx expr | all isLambdaBodyCtx ctx && not (isLam expr) && not (isLet expr) = do
@@ -274,19 +322,8 @@ retLet ctx expr@(LetRec binds body) | all isLambdaBodyCtx ctx = do
 
 retLet _ _ = fail "retLet"
 
-retVar :: NormalizeStep
-retVar [] e@(Lambda x (Var x')) | x == x' = do
-  resId <- liftQ $ mkBinderFor "res" (Var x')
-  changed "retVar" e $ LetRec [(resId,(Var x'))] (Var resId)
-
-retVar _ _ = fail "retVar"
-
 inlineVar :: NormalizeStep
 inlineVar = inlineBind "inlineVar" (isLocalVar . snd)
-
-emptyLet :: NormalizeStep
-emptyLet ctx e@(LetRec [] res) = changed "emptyLet" e res
-emptyLet _ _ = fail "emptyLet"
 
 letFlat :: NormalizeStep
 letFlat c topExpr@(LetRec binds expr) = do
@@ -303,19 +340,24 @@ letFlat c topExpr@(LetRec binds expr) = do
 
 letFlat _ _ = fail "letFlat"
 
-deadCode :: NormalizeStep
-deadCode ctx expr@(LetRec binds res) = do
-  let binds' = filter doBind binds
-  case (length binds /= length binds') of
-    True ->
-      changed "deadCode" expr (LetRec binds' res)
-    False ->
-      fail "deadCode"
-  where
-    boundExprs      = map snd binds
-    doBind (bndr,_) = any (exprUsesBinders [bndr]) (res:boundExprs)
+caseLam :: NormalizeStep
+caseLam ctx e@(Case scrut ty alts) = do
+  let altsWithLam = List.partition isLam . map snd $ alts
+  case altsWithLam of
+    ([],_)                 -> fail "caseLam"
+    (TyLambda tv e:rest,_) -> liftQ $ Error.throwError $ $(curLoc) ++ "What's a TyLambda doing in a case alternative?: " ++ pprString e
+    (Lambda bndr e:rest,_) -> do
+      bndr'       <- liftQ $ cloneVar bndr
+      let ty'     = applyFunTy ty (Id.idType bndr)
+      let alts'   = map (second (`App` (Var bndr'))) alts
+      let newExpr = Lambda bndr' (Case scrut ty' alts')
+      changed "caseLam" e newExpr
 
-deadCode _ _ = fail "deadCode"
+caseLam _ _ = fail "caseLam"
+
+letLam :: NormalizeStep
+letLam ctx e@(LetRec binds (Lambda bndr body)) = changed "letLam" e $ Lambda bndr $ LetRec binds body
+letLam _ _ = fail "letLam"
 
 scrutSimpl :: NormalizeStep
 scrutSimpl c expr@(Case scrut ty alts) = do
@@ -399,58 +441,20 @@ caseRemove ctx e@(Case scrut ty [(DataAlt dc bndrs,expr)]) | not usesVars = chan
     usesVars = exprUsesBinders bndrs expr
 caseRemove _ _ = fail "caseRemove"
 
-appSimpl :: NormalizeStep
-appSimpl ctx e@(App appf arg)
-  | (f, _) <- collectArgs appf
-  , isVar f || isCon f || isPrimCon f || isPrimFun f = do
-    localVar <- liftQ $ isLocalVar arg
-    untranslatable <- liftQ $ isUntranslatable arg
-    case localVar || untranslatable of
-      True  -> fail "appSimpl"
-      False -> do
-        argId <- liftQ $ mkBinderFor "arg" arg
-        changed "appSimpl" e (LetRec [(argId,arg)] (App appf (Var argId)))
+classopresolution c expr@(App (TyApp (Var sel) ty) dict) = do
+  case (collectArgs dict) of
+    (Prim _, _) -> fail "classopresolution"
+    _ -> do
+      case (Id.isClassOpId_maybe sel) of
+        Just cls -> do
+          let selectorIds = Class.classAllSelIds cls
+          let selIdN = List.elemIndex sel selectorIds
+          let isBuiltin = (varString sel) `elem` builtinIds
+          case (selIdN,isBuiltin) of
+            (Just n, False) -> do
+              selCase <- liftQ $ mkSelCase "classopresolution" dict 0 n
+              changed ("classopresolution: " ++ varString sel) expr selCase
+            _ -> fail "classopresolution"
+        Nothing -> fail "classopresolution"
 
-appSimpl _ _ = fail "appSimpl"
-
-bindUntranslatable :: NormalizeStep
-bindUntranslatable = inlineBind ("bindUntranslatable") (isUntranslatable . fst)
-
-primSpec :: NormalizeStep
-primSpec ctx e@(App e1 e2)
-  | (Var f, args)  <- collectArgs e1
-  , (Prim prim, _) <- collectArgs e2
-  = do
-    case prim of
-      PrimFun _ -> fail "primSpec"
-      PrimCon _ -> fail "primSpec"
-      _ -> do
-        bodyMaybe <- liftQ $ getGlobalExpr f
-        case bodyMaybe of
-          Just body -> do
-            argParams <- liftQ $ mapM (eitherM (mkBinderFor "pPS") (mkTyBinderFor "pPS")) args
-            let newArgs = zipWith (\a b -> case a of Left _ -> Left (Var b); Right _ -> Right $ Type.mkTyVarTy b) args argParams
-            let newBody = mkLams argParams $ mkApps body $ newArgs ++ [Left e2]
-            newf <- liftQ $ mkFunction f newBody
-            let newExpr = mkApps (Var newf) args
-            changed "primSpec" e newExpr
-          Nothing -> fail "primSpec"
-
-primSpec _ _ = fail "primSpec"
-
-inlineUntranslatable :: NormalizeStep
-inlineUntranslatable ctx e@(App e1 e2)
-  | (Prim _, _)   <- collectArgs e1
-  , (Var f, args) <- collectArgs e2
-  , not (isApplicable e2)
-  = do
-   untranslatable <- liftQ $ isUntranslatable e2
-   bodyMaybe      <- liftQ $ getGlobalExpr f
-   case (untranslatable,bodyMaybe) of
-     (True,Just body) -> do
-       let newBody = mkApps body args
-       let newExpr = App e1 newBody
-       changed "inlineUntranslatable" e newExpr
-     _ -> fail "inlineUntranslatable"
-
-inlineUntranslatable _ _ = fail "inlineUntranslatable"
+classopresolution _ _ = fail "classopresolution"

@@ -14,6 +14,7 @@ module CLaSH.Util.CoreHW.Tools
   , isPoly
   , isLam
   , applyFunTy
+  , applyForAllTy
   , termString
   , exprUsesBinders
   , dataConsFor
@@ -140,6 +141,12 @@ applyFunTy funTy argTy = resTy
   where
     (_, resTy) = Maybe.fromMaybe (error $ "applyFunTy splitFunTy: " ++ pprString (funTy, argTy)) $ splitFunTy_maybe funTy
 
+applyForAllTy forallTy argTy = resTy
+  where
+    resTy = case (splitForAllTy_maybe forallTy) of
+      Just _  -> applyTy forallTy argTy
+      Nothing -> error $ "applyTy: " ++ pprString (forallTy, argTy)
+
 applyFunTys ::
   Type
   -> [Type]
@@ -199,7 +206,14 @@ isPoly ::
   TypedThing t
   => t
   -> Bool
-isPoly = Maybe.isJust . splitForAllTy_maybe . getTypeFail
+isPoly e = p
+  where
+    t = getTypeFail e
+    p = case splitForAllTy_maybe t of
+      Just _  -> True
+      Nothing -> case splitFunTy_maybe t of
+        Just (_,res) -> isPoly res
+        Nothing -> False
 
 isApplicable ::
   TypedThing t
