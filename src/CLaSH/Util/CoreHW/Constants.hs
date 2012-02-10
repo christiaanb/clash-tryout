@@ -25,8 +25,11 @@ builtinFuns = concat
   [ stateFuns
   , bitFuns
   , vecFuns
-  , unsignedFuns
-  , signedFuns
+  --, unsignedFuns
+  --, signedFuns
+  , numFuns
+  , eqFuns
+  , ordFuns
   , literalFuns
   ]
   where
@@ -42,6 +45,12 @@ builtinFuns = concat
       [ "+>>","<<+","vinit","vlast","singleton","empty","+>","vcopyn"
       , "vcopy","vfoldl","vzipWith","vmap","!","vreplace"
       ]
+
+    numFuns = ["+","*","-","negate","abs","signum","fromInteger"]
+
+    eqFuns = ["==","/="]
+
+    ordFuns = ["compare","<",">=",">","<=","max","min"]
 
     unsignedFuns =
       ["eqUnsigned","neqUnsigned","plusUnsigned","minUnsigned","timesUnsigned"

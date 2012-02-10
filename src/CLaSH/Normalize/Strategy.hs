@@ -20,7 +20,7 @@ bottomupTry  = extractR . bottomupR . tryR . promoteR . transformationStep
 normalizeStrategy = foldl1 (>->) steps
   where
     steps = [ reprStrategy
-            , keepTrying ((bottomupTry classopresolution) !-> reprStrategy)
+            --, keepTrying ((bottomupTry classopresolution) !-> reprStrategy)
             , simplifyStrategy
             ]
 

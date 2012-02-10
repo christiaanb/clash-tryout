@@ -67,6 +67,8 @@ coreToCoreHW' (bndr:bndrs) = do
       term              <- makeCached bndr chwTranslated $ coreToCoreHW'' unlocatable expr
       let usedFreeBndrs = VarSet.varSetElems $ VarSet.filterVarSet
                             (\v -> (Var.isId v) &&
+                                   (not $ Id.isDictId v) &&
+                                   (not $ Id.isDFunId v) &&
                                    (Id.isClassOpId_maybe v == Nothing) &&
                                    (varString v) `notElem` builtinIds)
                             (termFreeVars term)

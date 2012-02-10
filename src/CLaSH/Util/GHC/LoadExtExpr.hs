@@ -70,9 +70,9 @@ loadDecl uniqSupply decl = do
       case unfolding of
         (CoreSyn.CoreUnfolding e _ _ _ _ _ _ _ _) -> return $ Just e
 #if __GLASGOW_HASKELL__ >= 702
-        (CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc cops
+        --(CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc cops
 #else
-        (CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc (CoreSyn.dfunArgExprs cops)
+        --(CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc (CoreSyn.dfunArgExprs cops)
 #endif
         _ -> return Nothing
     _ -> return Nothing
