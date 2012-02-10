@@ -1,5 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE CPP           #-}
 module CLaSH.Util.CoreHW.CoreToCoreHW
   ( coreExprToTerm
   )
@@ -12,7 +13,9 @@ import Control.Monad (join, liftM, liftM2)
 import CoreFVs    (exprSomeFreeVars)
 import CoreSyn    (CoreExpr, Expr(..), Unfolding(..), Bind(..), AltCon(..))
 import CoreUnfold (exprIsConApp_maybe)
+#if __GLASGOW_HASKELL__ >= 702
 import Coercion   (isCoVar,coercionType)
+#endif
 import DataCon    (DataCon,dataConName,dataConTyCon)
 import FastString (mkFastString)
 import Id         (mkSysLocalM,isDataConWorkId_maybe,isDictId,isDFunId,isClassOpId_maybe)
@@ -55,7 +58,9 @@ coreExprToTerm unlocs = term
     term (Cast e co)             = term e
     term (Note _ e)              = term e
     term (Type ty)               = error $ "Type at non-argument position not supported:\n" ++ pprString ty
+#if __GLASGOW_HASKELL__ >= 702
     term (Coercion co)           = S.Prim $ S.PrimCo co
+#endif
 
     alt _ (DEFAULT   , [], e)    = (S.DefaultAlt, term e)
     alt _ (LitAlt l  , [], e)    = (S.LiteralAlt l, term e)
@@ -66,7 +71,11 @@ coreExprToTerm unlocs = term
           False -> error $ "Exprs binding scrutinee are not supported:\n" ++ pprString (dc,xs,e)
       where
         (as,ys) = span isTyVar xs
+#if __GLASGOW_HASKELL__ >= 702
         (cs,zs) = span isCoVar ys
+#else
+        (cs,zs) = ([],ys)
+#endif
 
     alt b lt                     = error $ "coreExprToTerm: " ++ pprString lt
 

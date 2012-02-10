@@ -29,7 +29,7 @@ import CLaSH.Util.CoreHW.Constants    (builtinIds)
 import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm)
 import CLaSH.Util.CoreHW.FreeVars     (termFreeVars)
 import CLaSH.Util.CoreHW.Syntax       (Var, Term)
-import CLaSH.Util.CoreHW.Tools        (termType,varString,varStringUniq)
+import CLaSH.Util.CoreHW.Tools        (varString,varStringUniq)
 import CLaSH.Util.CoreHW.Transform    (regenUniques)
 import CLaSH.Util.CoreHW.Types        (TransformSession, emptyTransformState, tsUniqSupply)
 import CLaSH.Util.Pretty

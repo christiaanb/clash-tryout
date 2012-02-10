@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE CPP                  #-}
 module CLaSH.Util.CoreHW.Types
   ( CoreContext (..)
   , CoreBinding
@@ -28,10 +29,17 @@ import CLaSH.Util                 (UniqSupply, MonadUnique(..), splitUniqSupply)
 import CLaSH.Util.CoreHW.Syntax   (Var, Term, TyVar)
 
 newtype OrdType = OrdType Type.Type
+#if __GLASGOW_HASKELL__ < 702
+instance Eq OrdType where
+  (OrdType a) == (OrdType b) = Type.tcEqType a b
+instance Ord OrdType where
+  compare (OrdType a) (OrdType b) = Type.tcCmpType a b
+#else
 instance Eq OrdType where
   (OrdType a) == (OrdType b) = Type.eqType a b
 instance Ord OrdType where
   compare (OrdType a) (OrdType b) = Type.cmpType a b
+#endif
 
 type CoreBinding = (Var, Term)
 

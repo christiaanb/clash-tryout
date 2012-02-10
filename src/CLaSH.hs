@@ -1,6 +1,6 @@
 module CLaSH
   ( module CLaSH.Builtin
-  , module CLaSH.Driver
+  , generateVHDL
   )
 where
 

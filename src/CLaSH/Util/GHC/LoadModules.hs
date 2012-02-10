@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE CPP             #-}
 module CLaSH.Util.GHC.LoadModules
   ( loadModules
   )
@@ -18,7 +19,11 @@ import CLaSH.Util (curLoc)
 
 loadModules :: String -> IO [HscTypes.ModGuts]
 loadModules modName =
+#if __GLASGOW_HASKELL__ >= 702
   GHC.defaultErrorHandler DynFlags.defaultLogAction $
+#else
+  GHC.defaultErrorHandler DynFlags.defaultDynFlags $
+#endif
     GHC.runGhc (Just GHC.Paths.libdir) $ do
       dflags <- GHC.getSessionDynFlags
       let dflags' = foldl DynFlags.xopt_set (dflags {GHC.simplPhases = 0, DynFlags.ctxtStkDepth = 1000}) [DynFlags.Opt_TemplateHaskell,DynFlags.Opt_Arrows]

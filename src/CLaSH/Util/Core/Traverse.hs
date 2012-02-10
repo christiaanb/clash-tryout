@@ -1,7 +1,8 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE CPP                   #-}
 module CLaSH.Util.Core.Traverse
   ( startContext
   , transformationStep
@@ -56,7 +57,7 @@ varR :: (Monoid dec, Monad m)
 varR = transparently $ rewrite $ \e -> case e of
   (CoreSyn.Var x) -> return (CoreSyn.Var x)
   _               -> fail "varR"
-  
+
 varU :: (Monad m, Monoid dec, Monoid r)
   => Translate m dec CoreSyn.CoreExpr r
 varU = translate $ \e -> case e of
@@ -68,7 +69,7 @@ litR :: (Monoid dec, Monad m)
 litR = transparently $ rewrite $ \e -> case e of
   (CoreSyn.Lit x) -> return (CoreSyn.Lit x)
   _               -> fail "litR"
-  
+
 litU :: (Monad m, Monoid dec, Monoid r)
   => Translate m dec CoreSyn.CoreExpr r
 litU = translate $ \e -> case e of
@@ -76,7 +77,7 @@ litU = translate $ \e -> case e of
   _               -> fail "litU"
 
 appR :: (Monad m)
-  => Rewrite m [CoreContext] CoreSyn.CoreExpr 
+  => Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
 appR rr1 rr2 = transparently $ rewrite $ \e -> case e of
@@ -94,7 +95,7 @@ appU rr1 rr2 = translate $ \e -> case e of
   _                   -> fail "appU"
 
 lamR :: (Monad m)
-  => Rewrite m [CoreContext] CoreSyn.CoreExpr 
+  => Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
 lamR rr = transparently $ rewrite $ \e -> case e of
   (CoreSyn.Lam b expr) -> liftM (CoreSyn.Lam b) (apply (LambdaBody b) rr expr)
@@ -147,7 +148,7 @@ recR :: (Monad m)
   => Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreBind
 recR rr = transparently $ rewrite $ \e -> case e of
-  (CoreSyn.Rec binds) -> do 
+  (CoreSyn.Rec binds) -> do
     binds' <- mapM (transBind (map fst binds)) binds
     return $ CoreSyn.Rec binds'
   _                   -> fail "recR"
@@ -198,7 +199,7 @@ castU :: (Monad m, Monoid r)
   -> Translate m [CoreContext] CoreSyn.CoreExpr r
 castU rr = translate $ \e -> case e of
   (CoreSyn.Cast expr co) -> apply (Other) rr expr
-  _                      -> fail "castU" 
+  _                      -> fail "castU"
 
 noteR :: (Monad m)
   => Rewrite m [CoreContext] CoreSyn.CoreExpr
@@ -212,31 +213,33 @@ noteU :: (Monad m, Monoid r)
   -> Translate m [CoreContext] CoreSyn.CoreExpr r
 noteU rr = translate $ \e -> case e of
   (CoreSyn.Note note expr) -> apply (Other) rr expr
-  _                        -> fail "noteU" 
+  _                        -> fail "noteU"
 
 typeR :: (Monoid dec, Monad m)
   => Rewrite m dec CoreSyn.CoreExpr
 typeR = transparently $ rewrite $ \e -> case e of
   (CoreSyn.Type x) -> return (CoreSyn.Type x)
   _               -> fail "typeR"
-  
+
 typeU :: (Monad m, Monoid dec, Monoid r)
   => Translate m dec CoreSyn.CoreExpr r
 typeU = translate $ \e -> case e of
   (CoreSyn.Type x) -> return $ mempty (CoreSyn.Type x)
   _               -> fail "typeU"
 
+#if __GLASGOW_HASKELL__ >= 702
 coercionR :: (Monoid dec, Monad m)
   => Rewrite m dec CoreSyn.CoreExpr
 coercionR = transparently $ rewrite $ \e -> case e of
   (CoreSyn.Coercion x) -> return (CoreSyn.Coercion x)
   _               -> fail "coercionR"
-  
+
 coercionU :: (Monad m, Monoid dec, Monoid r)
   => Translate m dec CoreSyn.CoreExpr r
 coercionU = translate $ \e -> case e of
   (CoreSyn.Coercion x) -> return $ mempty (CoreSyn.Coercion x)
   _               -> fail "coercionU"
+#endif
 
 instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
   allR rr   =  varR
@@ -248,7 +251,9 @@ instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
             <+ castR (extractR rr)
             <+ noteR (extractR rr)
             <+ typeR
+#if __GLASGOW_HASKELL__ >= 702
             <+ coercionR
+#endif
   crushU rr =  varU
             <+ litU
             <+ appU  (extractU rr) (extractU rr)
@@ -258,7 +263,9 @@ instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
             <+ castU (extractU rr)
             <+ noteU (extractU rr)
             <+ typeU
+#if __GLASGOW_HASKELL__ >= 702
             <+ coercionU
+#endif
 
 instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreBind where
   allR rr   =  nonRecR (extractR rr)

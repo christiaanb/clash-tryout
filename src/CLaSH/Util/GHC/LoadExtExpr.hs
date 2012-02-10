@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module CLaSH.Util.GHC.LoadExtExpr
   ( loadExtExpr
   )
@@ -28,13 +29,19 @@ import qualified UniqFM
 import qualified UniqSupply
 import qualified Var
 
+#if __GLASGOW_HASKELL__ >= 702
 silentLogger :: DynFlags.LogAction
 silentLogger _ _ _ _ = return ()
+#endif
 
 loadExtExpr :: GHC.Name -> IO (Maybe CoreSyn.CoreExpr)
 loadExtExpr name = do
   uniqSupply <- UniqSupply.mkSplitUniqSupply 'p'
+#if __GLASGOW_HASKELL__ >= 702
   GHC.defaultErrorHandler silentLogger $ do
+#else
+  GHC.defaultErrorHandler DynFlags.defaultDynFlags $ do
+#endif
     GHC.runGhc (Just GHC.Paths.libdir) $ do
       dflags <- GHC.getSessionDynFlags
       GHC.setSessionDynFlags dflags
@@ -62,7 +69,11 @@ loadDecl uniqSupply decl = do
       let unfolding = IdInfo.unfoldingInfo $ Var.idInfo _id
       case unfolding of
         (CoreSyn.CoreUnfolding e _ _ _ _ _ _ _ _) -> return $ Just e
+#if __GLASGOW_HASKELL__ >= 702
         (CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc cops
+#else
+        (CoreSyn.DFunUnfolding arity dc cops) -> return $ coreExprFromDFunUnfolding uniqSupply _id dc (CoreSyn.dfunArgExprs cops)
+#endif
         _ -> return Nothing
     _ -> return Nothing
 

@@ -15,7 +15,7 @@ builtinDicts = ["$dPositiveT","$dNaturalT","$dIntegerT"]
 
 builtinDFuns :: [String]
 builtinDFuns = ["$fShowUnsigned","$fEqInteger","$fPositiveTx","$fNaturalTx",
-  "$fArrowComponent","$fArrowLoopComponent","$fShowSigned"]
+  "$fArrowComponent","$fArrowLoopComponent","$fShowSigned","$fNumInt"]
 
 builtinDataCons :: [String]
 builtinDataCons = ["I#","Int#","Signed","Unsigned"]

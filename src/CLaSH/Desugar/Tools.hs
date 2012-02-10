@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module CLaSH.Desugar.Tools
   ( mkDelay
   , mkBlockRam
@@ -24,7 +25,11 @@ import CLaSH.Desugar.Types
 import CLaSH.Util.Core (mkExternalVar,TypedThing(..),cloneVar)
 
 mkDelay ::
+#if __GLASGOW_HASKELL__ >= 702
   Type.TyVar
+#else
+  Var.TyVar
+#endif
   -> Type.Type
   -> DesugarSession Var.Var
 mkDelay sTV clockTy = do
@@ -34,8 +39,13 @@ mkDelay sTV clockTy = do
   return delay
 
 mkBlockRam ::
+#if __GLASGOW_HASKELL__ >= 702
   Type.TyVar
   -> Type.TyVar
+#else
+  Var.TyVar
+  -> Var.TyVar
+#endif
   -> Type.Type
   -> Type.Type
   -> Type.Type

@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PatternGuards       #-}
+{-# LANGUAGE CPP                 #-}
 module CLaSH.Normalize.Tools
   ( isNormalizable
   , assertNormalizable
@@ -30,7 +31,9 @@ import qualified Data.Maybe as Maybe
 import qualified CoreUtils
 import qualified DataCon
 import qualified Id
+#if __GLASGOW_HASKELL__ >= 702
 import qualified Kind
+#endif
 import qualified MkCore
 import qualified Name
 import qualified TcType
@@ -207,7 +210,11 @@ mkTyBinderFor ::
   String
   -> Type
   -> NormalizeSession Var
+#if __GLASGOW_HASKELL__ >= 702
 mkTyBinderFor name t = mkTypeVar name (Kind.typeKind t)
+#else
+mkTyBinderFor name t = mkTypeVar name (TcType.typeKind t)
+#endif
 
 addGlobalBind ::
   Var

@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE CPP           #-}
 module CLaSH.Util.Pretty.CoreHW
   ()
 where
@@ -10,16 +11,32 @@ import Var (varType)
 import CLaSH.Util hiding (pprBndr)
 import CLaSH.Util.CoreHW.Syntax
 
+#if __GLASGOW_HASKELL__ < 702
+pprPrec :: Outputable a => Rational -> a -> SDoc
+pprPrec _ = ppr
+
+prec :: Rational
+prec = 1
+#endif
+
 newtype PrettyFunction = PrettyFunction (Rational -> SDoc)
 
 instance Outputable PrettyFunction where
+#if __GLASGOW_HASKELL__ < 702
+  ppr (PrettyFunction f) = f prec
+#else
   pprPrec prec (PrettyFunction f) = f prec
+#endif
 
 asPrettyFunction :: Outputable a => a -> PrettyFunction
 asPrettyFunction x = PrettyFunction (\prec -> pprPrec prec x)
 
 instance Outputable Term where
+#if __GLASGOW_HASKELL__ < 702
+  ppr e = case e of
+#else
   pprPrec prec e = case e of
+#endif
     Var x         -> pprPrec prec x
     Prim x        -> pprPrec prec x
     TyLambda x e  -> pprPrecLam True  prec [x] e
@@ -32,7 +49,11 @@ instance Outputable Term where
     LetRec xes e  -> pprPrecLetRec prec (map (second id) xes) e
 
 instance Outputable Prim where
+#if __GLASGOW_HASKELL__ < 702
+  ppr p = case p of
+#else
   pprPrec prec p = case p of
+#endif
     PrimFun  x -> pprPrec prec x
     PrimCon  x -> pprPrec prec x
     PrimDict x -> pprPrec prec x
@@ -40,10 +61,14 @@ instance Outputable Prim where
     PrimCo   x -> pprPrec prec x
 
 instance Outputable AltCon where
-    pprPrec prec altcon = case altcon of
-        DataAlt dc xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) xs)
-        LiteralAlt l  -> ppr l
-        DefaultAlt    -> text "_"
+#if __GLASGOW_HASKELL__ < 702
+  ppr altcon = case altcon of
+#else
+  pprPrec prec altcon = case altcon of
+#endif
+    DataAlt dc xs -> prettyParen (prec >= appPrec) $ ppr dc <+> hsep (map (pprBndr CaseBind) xs)
+    LiteralAlt l  -> ppr l
+    DefaultAlt    -> text "_"
 
 appPrec, opPrec, noPrec :: Num a => a
 appPrec = 2 -- Argument of a function application

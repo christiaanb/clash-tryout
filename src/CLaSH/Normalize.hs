@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module CLaSH.Normalize
   ( normalize
   , normalizeMaybe
@@ -83,7 +84,9 @@ normalize' nonRepr (bndr:bndrs) = do
                             (\v -> (Var.isId v) &&
                                    (not $ Id.isDictId v) &&
                                    (not $ Id.isDFunId v) &&
+#if __GLASGOW_HASKELL__ >= 702
                                    (not $ Id.isEvVar v) &&
+#endif
                                    (not $ Id.isDataConWorkId v) &&
                                    (Id.isClassOpId_maybe v == Nothing) &&
                                    (Id.isDataConId_maybe v == Nothing) &&

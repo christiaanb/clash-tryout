@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators    #-}
 {-# LANGUAGE PatternGuards    #-}
+{-# LANGUAGE CPP              #-}
 module CLaSH.Util.CoreHW.Tools
   ( TypedThing(..)
   , nameString
@@ -49,7 +50,9 @@ import qualified Data.Map            as Map
 import qualified Data.Maybe          as Maybe
 
 -- GHC API
+#if __GLASGOW_HASKELL__ >= 702
 import Coercion   (coercionType)
+#endif
 import DataCon    (dataConWorkId)
 import FastString (mkFastString)
 import Id         (idType,mkSysLocalM)
@@ -58,7 +61,7 @@ import Name       (Name, mkInternalName, nameOccName, getOccString)
 import OccName    (mkVarOcc, occNameString)
 import SrcLoc     (noSrcSpan)
 import TyCon      (TyCon,tyConDataCons_maybe,isClosedSynTyCon,synTyConType,tyConName)
-import Type       (Type, Kind, applyTy, applyTys, mkForAllTy, mkFunTy, splitFunTy, splitFunTy_maybe, isFunTy, splitTyConApp_maybe, tyVarsOfType, splitForAllTy_maybe)
+import Type       (Type, Kind, applyTy, applyTys, mkForAllTy, mkFunTy, splitFunTy_maybe, isFunTy, splitTyConApp_maybe, tyVarsOfType, splitForAllTy_maybe)
 import TypeRep    (Type(..))
 import Var        (Var, mkTyVar, varName, varUnique, isTyVar)
 
@@ -124,7 +127,9 @@ primType p = case p of
   PrimCon  x -> idType (dataConWorkId x)
   PrimDict x -> idType x
   PrimDFun x -> idType x
+#if __GLASGOW_HASKELL__ >= 702
   PrimCo   x -> coercionType x
+#endif
 
 applyTypeToArgs :: String -> Type -> [Either Term Type] -> Type
 applyTypeToArgs _ opTy []              = opTy
