@@ -240,15 +240,16 @@ appSimpl _ _ = fail "appSimpl"
 bindNonRep :: NormalizeStep
 bindNonRep = inlineBind ("bindNonRep") (isUntranslatable . fst)
 
--- Specialize functions on untranslatable arguments
+-- Specialize representable functions on untranslatable arguments
 nonRepSpec :: NormalizeStep
 nonRepSpec ctx e@(App e1 e2)
   | (Var f, args) <- collectArgs e1
   = do
-    untranslatable <- liftQ $ isUntranslatable e2
-    bodyMaybe      <- liftQ $ getGlobalExpr f
-    case (untranslatable,bodyMaybe) of
-      (True, Just body) -> do
+    untranslatableArg <- liftQ $ isUntranslatable e2
+    translatableRes   <- fmap not $ liftQ $ isUntranslatable $ (snd . Type.splitFunTys . termType) e
+    bodyMaybe         <- liftQ $ getGlobalExpr f
+    case (translatableRes,untranslatableArg,bodyMaybe) of
+      (True, True, Just body) -> do
         localFVs <- liftQ $ localFreeVars e2
         argParams <- liftQ $ mapM (eitherM (mkBinderFor "pNRS") (mkTyBinderFor "pNRS")) args
         let newArgs = zipWith (\a b -> case a of Left _ -> Left (Var b); Right _ -> Right $ Type.mkTyVarTy b) args argParams
