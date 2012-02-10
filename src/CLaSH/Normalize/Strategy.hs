@@ -22,6 +22,7 @@ normalizeStrategy = foldl1 (>->) steps
     steps = [ reprStrategy
             --, keepTrying ((bottomupTry classopresolution) !-> reprStrategy)
             , simplifyStrategy
+            , bottomupTry retVar
             ]
 
 reprStrategy ::

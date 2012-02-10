@@ -84,7 +84,9 @@ genModule' modName modExpr mStart = do
   modCnt           <- LabelM.gets nlModCnt
   LabelM.modify nlModCnt (+1)
   let modName'     = ((++ (show modCnt)) . (\v -> if null v then (v ++ "Component_") else (v ++ "_")) . mkVHDLBasicId . varString) modName
-  (assigns,clocks) <- fmap unzip $ mapM mkConcSm binds
+  (assigns,clocks) <- case binds of
+                        [] -> Error.throwError $ $(curLoc) ++ "Not in normal form: No top-level Let-Binding: " ++ pprString modName ++ "\n" ++ pprString modExpr
+                        _  -> fmap unzip $ mapM mkConcSm binds
   let modInps'     = (zip argNames argTypes) ++ (List.nub $ concat clocks)
   let modInps      = filter (not . untranslatableHType . snd) modInps'
   let modOutps     = [(resName,resType)]
@@ -314,7 +316,10 @@ genApplication dst f args =  do
                   return ([comment, InstDecl modName (mkVHDLBasicId $ "comp_inst_" ++ dstName) [] (clocksAssign ++ inpsAssign) [outpAssign]],clocks)
                 else do
                   Error.throwError $ $(curLoc) ++ "Under/Over-applied normalized function: (exptected: " ++ show (length modInps) ++ ", actual: " ++ show (length clocks + length args)++ "): " ++ pprString (dst,f,args)
-            else Error.throwError $ $(curLoc) ++ "Using a function that is not normalizable and not a known builtin: " ++ pprString (dst,f,args) ++ "\nWhich has type: " ++ show dstType
+            else do
+              expr <- varToExpr (Var f)
+              let comment = genComment dst "" [Var f]
+              return ((comment:mkUncondAssign (dst,dstType) expr),[])
     else
       return ([],[])
 

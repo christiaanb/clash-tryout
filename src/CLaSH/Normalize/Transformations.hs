@@ -34,6 +34,7 @@ module CLaSH.Normalize.Transformations
   , scrutSimpl
   , caseSimpl
   , caseRemove
+  , retVar
   -- ClassOp Resolution
   , classopresolution
   )
@@ -441,6 +442,13 @@ caseRemove ctx e@(Case scrut ty [(DataAlt dc bndrs,expr)]) | not usesVars = chan
     usesVars = exprUsesBinders bndrs expr
 caseRemove _ _ = fail "caseRemove"
 
+retVar :: NormalizeStep
+retVar [] e@(Lambda bndr (Var bndr')) | bndr == bndr' = do
+  resId <- liftQ $ mkBinderFor "res" (Var bndr)
+  changed "retVar" e $ Lambda bndr $ LetRec [(resId,Var bndr)] (Var resId)
+retVar _ _ = fail "letLam"
+
+classopresolution :: NormalizeStep
 classopresolution c expr@(App (TyApp (Var sel) ty) dict) = do
   case (collectArgs dict) of
     (Prim _, _) -> fail "classopresolution"
