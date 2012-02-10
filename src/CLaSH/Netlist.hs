@@ -508,14 +508,16 @@ genVfoldl dst [fArg,Var zArg,Var vArg] = do
   return (comment:tempDecls ++ assigns,clks)
 
 genVzipWith :: BuiltinBuilder
-genVzipWith dst [_,fArg,Var v1Arg,Var v2Arg] = do
+genVzipWith dst [fArg,Var v1Arg,Var v2Arg] = do
   dstType@(VecType len etype) <- mkHType dst
   let comment    = genComment dst "vzipWith" [fArg,Var v1Arg,Var v2Arg]
   let v1Indexed  = map (\i -> Left . Var $ appendToName v1Arg ("(" ++ show i ++ ")")) $ [0..len-1]
   let v2Indexed  = map (\i -> (:[]) . Left . Var $ appendToName v2Arg ("(" ++ show i ++ ")")) $ [0..len-1]
   let vs         = zipWith (:) v1Indexed v2Indexed
   let exprs      = map (mkApps fArg) vs
-  bndrs          <- mapM mkTempVar (replicate len dst)
+  bndrs'          <- mapM mkTempVar (replicate len dst)
+  let bndrsType  = last . snd . Type.splitAppTys . Var.varType $ dst
+  let bndrs      = map (flip Var.setVarType bndrsType) bndrs'
   let tempDecls  = map (\v -> NetDecl (mkVHDLBasicId $ varString v) etype Nothing) bndrs
   (assigns,clks) <- fmap (first concat . second concat . unzip) $ mapM mkConcSm $ zip bndrs exprs
   let assignExpr = mkUncondAssign (dst,dstType) (ExprFunCall "" $ map (ExprVar . mkVHDLBasicId . varString) $ reverse bndrs)
