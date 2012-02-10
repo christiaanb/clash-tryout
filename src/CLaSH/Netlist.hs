@@ -17,6 +17,7 @@ import qualified Data.Maybe as Maybe
 import Debug.Trace
 
 -- GHC API
+import qualified Coercion
 import qualified CoreSyn
 import qualified CoreUnfold
 import qualified DataCon
@@ -25,6 +26,7 @@ import qualified Id
 import qualified IdInfo
 import qualified Literal
 import qualified Name
+import qualified Type
 import qualified Var
 
 -- Internal Modules
@@ -100,6 +102,7 @@ mkConcSm (bndr, Var v) = genApplication bndr v []
 mkConcSm (bndr, app@(App _ _)) = do
   let (appF, args) = collectExprArgs app
   args'            <- Monad.filterM (fmap not . hasUntranslatableType) args
+  let primArgs     = filter (\a -> let t = getTypeFail a in not ((Type.isDictTy t) || (Coercion.isCoercionKind t))) args
   case appF of
     Var f -> case (all isVar args') of
       True  -> genApplication bndr f args'
@@ -108,14 +111,14 @@ mkConcSm (bndr, app@(App _ _)) = do
       True  -> genApplication bndr (DataCon.dataConWorkId dc) args'
       False -> Error.throwError $ $(curLoc) ++ "Not in normal form: Data-application with non-Var arguments:\n" ++ pprString app
     Prim (PrimFun f) -> case (List.lookup (varString f) builtinBuilders) of
-      Just (argCount, builder) -> if length args == argCount
-          then builder bndr args
-          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
+      Just (argCount, builder) -> if length primArgs == argCount
+          then builder bndr primArgs
+          else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin function(exptected: " ++ show argCount ++ ", actual: " ++ show (length primArgs) ++"): " ++ pprString (bndr,app,args)
       Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive function that is not a known builtin: " ++ pprString (bndr,app)
     Prim (PrimCon dc) -> case (List.lookup (varString $ DataCon.dataConWorkId dc) builtinBuilders) of
-      Just (argCount, builder) -> if length args == argCount
-        then builder bndr args
-        else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin constructor(exptected: " ++ show argCount ++ ", actual: " ++ show (length args) ++"): " ++ pprString (bndr,app,args)
+      Just (argCount, builder) -> if length primArgs == argCount
+        then builder bndr primArgs
+        else Error.throwError $ $(curLoc) ++ "Incorrect number of arguments to builtin constructor(exptected: " ++ show argCount ++ ", actual: " ++ show (length primArgs) ++"): " ++ pprString (bndr,app,args)
       Nothing -> Error.throwError $ $(curLoc) ++ "Using a primitive constructor that is not a known builtin: " ++ pprString (bndr,app)
     Lambda _ _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var (beta-reducable):\n" ++ pprString app
     _ -> Error.throwError $ $(curLoc) ++ "Not in normal form: application of a non-Var:\n" ++ pprString app
@@ -328,43 +331,32 @@ builtinBuilders =
   , ("andB"               , (2, genBinaryOperator "andB" And))
   , ("orB"                , (2, genBinaryOperator "orB"  Or ))
   , ("notB"               , (1, genUnaryOperator  "notB" LNeg))
-  , (".&."                , (3, \d args -> genBinaryOperator ".&." And d (tail args)))
-  , ("xor"                , (3, \d args -> genBinaryOperator "xor" Xor d (tail args)))
+  , (".&."                , (2, genBinaryOperator ".&." And))
+  , ("xor"                , (2, genBinaryOperator "xor" Xor))
   , ("delayBuiltin"       , (3, genDelay))
-  , ("blockRamBuiltin"    , (6 ,genBlockRam))
-  --, ("eqUnsigned"         , (3, \d args -> genBinaryOperator "(==)" Equals d (tail args)))
-  --, ("neqUnsigned"        , (3, \d args -> genBinaryOperator "(/=)" NotEquals d (tail args)))
-  --, ("eqSigned"           , (3, \d args -> genBinaryOperator "(==)" Equals d (tail args)))
-  --, ("plusUnsigned"       , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
-  --, ("minUnsigned"        , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
-  --, ("plusSigned"         , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
-  --, ("minSigned"          , (3, \d args -> genBinaryOperator "(-)" Minus d (tail args)))
-  --, ("timesSigned"        , (3, genTimes))
-  --, ("negateSigned"       , (2, genNegate))
-  --, ("unsignedFromInteger", (2, genFromInteger))
-  --, ("signedFromInteger"  , (2, genFromInteger))
+  , ("blockRamBuiltin"    , (6, genBlockRam))
   , ("+>>"                , (2, genShiftIntoL))
   , ("<<+"                , (2, genShiftIntoR))
   , ("+>"                 , (2, genVcons))
-  , ("vlast"              , (2, genVlast))
-  , ("vinit"              , (2, genVinit))
+  , ("vlast"              , (1, genVlast))
+  , ("vinit"              , (1, genVinit))
   , ("singleton"          , (1, genSingleton))
-  , ("vcopy"              , (2, genVCopy))
-  , ("vcopyn"             , (3, genVCopyn))
+  , ("vcopy"              , (1, genVCopy))
+  , ("vcopyn"             , (2, genVCopyn))
   , ("vfoldl"             , (3, genVfoldl))
-  , ("vzipWith"           , (4, genVzipWith))
+  , ("vzipWith"           , (3, genVzipWith))
   , ("vmap"               , (2, genVmap))
-  , ("!"                  , (3, genIndex))
-  , ("vreplace"           , (4, genVreplace))
-  , ("=="                 , (3, \d args -> genBinaryOperator "(==)" Equals d (tail args)))
-  , ("/="                 , (3, \d args -> genBinaryOperator "(/=)" NotEquals d (tail args)))
-  , ("Signed"             , (1, \d args -> genFromInteger d (undefined:args)))
-  , ("Unsigned"           , (1, \d args -> genFromInteger d (undefined:args)))
-  , ("+"                  , (3, \d args -> genBinaryOperator "(+)" Plus  d (tail args)))
-  , ("-"                  , (3, \d args -> genBinaryOperator "(-)" Plus  d (tail args)))
-  , ("*"                  , (3, genTimes))
-  , ("negate"             , (3, genNegate))
-  , ("fromInteger"        , (2, genFromInteger))
+  , ("!"                  , (2, genIndex))
+  , ("vreplace"           , (3, genVreplace))
+  , ("=="                 , (2, genBinaryOperator "(==)" Equals   ))
+  , ("/="                 , (2, genBinaryOperator "(/=)" NotEquals))
+  , ("Signed"             , (1, genFromInteger))
+  , ("Unsigned"           , (1, genFromInteger))
+  , ("+"                  , (2, genBinaryOperator "(+)" Plus ))
+  , ("-"                  , (2, genBinaryOperator "(-)" Minus))
+  , ("*"                  , (2, genTimes))
+  , ("negate"             , (1, genNegate))
+  , ("fromInteger"        , (1, genFromInteger))
   ]
 
 genDelay :: BuiltinBuilder
@@ -424,7 +416,7 @@ parseClock clock = do
     _ -> Error.throwError $ $(curLoc) ++ "Don't know how to handle clock: " ++ pprString clock
 
 genFromInteger :: BuiltinBuilder
-genFromInteger dst [_,arg] = do
+genFromInteger dst [arg] = do
   lit <- getIntegerLiteral nlTfpSyn arg
   dstType <- mkHType dst
   litExpr <- case dstType of
@@ -460,7 +452,7 @@ genShiftIntoR dst [Var vecArg,Var elArg] = do
   return (comment:assignExpr,[])
 
 genVlast :: BuiltinBuilder
-genVlast dst [_,Var vecArg] = do
+genVlast dst [Var vecArg] = do
   dstType <- mkHType dst
   (VecType len _) <- mkHType (Var vecArg)
   let vecName = (mkVHDLBasicId . varString) vecArg
@@ -469,7 +461,7 @@ genVlast dst [_,Var vecArg] = do
   return (comment:selExpr,[])
 
 genVinit :: BuiltinBuilder
-genVinit dst [_,Var vecArg] = do
+genVinit dst [Var vecArg] = do
   dstType <- mkHType dst
   (VecType len _) <- mkHType vecArg
   let vecName = (mkVHDLBasicId . varString) vecArg
@@ -486,7 +478,7 @@ genSingleton dst [Var eArg] = do
   return (comment:assignExpr,[])
 
 genVCopy :: BuiltinBuilder
-genVCopy dst [_,Var eArg] = do
+genVCopy dst [Var eArg] = do
   dstType <- mkHType dst
   let eName = varString eArg
   let assignExpr = mkUncondAssign (dst,dstType) (ExprAll (ExprVar eName))
@@ -536,7 +528,7 @@ genVmap dst [fArg,Var vArg] = do
   return (comment : tempDecls ++ assigns ++ assignExpr,clks)
 
 genIndex :: BuiltinBuilder
-genIndex dst [_,Var vecArg,Var iArg] = do
+genIndex dst [Var vecArg,Var iArg] = do
   dstType <- mkHType dst
   let [vecName,iName] = map (mkVHDLBasicId . varString) [vecArg,iArg]
   let selExpr = mkUncondAssign (dst,dstType) (ExprIndex vecName (ExprFunCall "to_integer" [ExprVar iName]))
@@ -544,7 +536,7 @@ genIndex dst [_,Var vecArg,Var iArg] = do
   return (comment:selExpr,[])
 
 genVreplace :: BuiltinBuilder
-genVreplace dst [_,Var vecArg,Var iArg,Var eArg] = do
+genVreplace dst [Var vecArg,Var iArg,Var eArg] = do
   dstType@(VecType len _) <- mkHType dst
   let [dstName,vecName,iName,eName] = map (mkVHDLBasicId . varString) [dst,vecArg,iArg,eArg]
   let ifCond = ExprBinary Equals (ExprVar "n") (ExprFunCall "to_integer" [ExprVar iName])
@@ -563,7 +555,7 @@ genVcons dst [eArg,vArg] = do
   return (comment:assignExpr,[])
 
 genTimes :: BuiltinBuilder
-genTimes dst [_,arg1,arg2] = do
+genTimes dst [arg1,arg2] = do
   dstType <- mkHType dst
   let len = (case dstType of UnsignedType l -> l; SignedType l -> l)
   [arg1',arg2'] <- mapM varToExpr [arg1,arg2]
@@ -571,7 +563,7 @@ genTimes dst [_,arg1,arg2] = do
   return (comment:(mkUncondAssign (dst,dstType) (ExprFunCall "resize" [ExprBinary Times arg1' arg2',ExprLit Nothing $ ExprNum $ fromIntegral len])), [])
 
 genNegate :: BuiltinBuilder
-genNegate dst [_,arg] = do
+genNegate dst [arg] = do
   dstType <- mkHType dst
   arg'    <- varToExpr arg
   case dstType of
