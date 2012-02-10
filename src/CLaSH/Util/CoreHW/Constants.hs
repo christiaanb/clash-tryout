@@ -33,7 +33,7 @@ builtinFuns = concat
   , literalFuns
   ]
   where
-    stateFuns = ["delayBuiltin","blockRamBuiltin"]
+    stateFuns = ["delayBuiltin","blockRamBuiltin","build"]
 
     bitFuns = ["xorB","andB","notB","orB",".&.","xor","$c.&.","$cxor","$c.|."
               ,"$ccomplement", "$cshift", "$crotate", "$cbit", "$csetBit"
