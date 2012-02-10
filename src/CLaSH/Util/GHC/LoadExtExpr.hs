@@ -65,7 +65,7 @@ loadDecl :: UniqSupply.UniqSupply -> IfaceSyn.IfaceDecl -> TcRnTypes.IfL (Maybe 
 loadDecl uniqSupply decl = do
   tyThing <- TcIface.tcIfaceDecl False decl
   case tyThing of
-    GHC.AnId _id -> do
+    GHC.AnId _id | Var.isId _id -> do
       let unfolding = IdInfo.unfoldingInfo $ Var.idInfo _id
       case unfolding of
         (CoreSyn.CoreUnfolding e _ _ _ _ _ _ _ _) -> return $ Just e

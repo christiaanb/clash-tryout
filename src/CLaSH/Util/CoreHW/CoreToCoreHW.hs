@@ -21,6 +21,9 @@ import FastString (mkFastString)
 import Id         (mkSysLocalM,isDataConWorkId_maybe,isDictId,isDFunId,isClassOpId_maybe)
 import TyCon      (isNewTyCon)
 import Var        (Var,isTyVar)
+#if __GLASGOW_HASKELL__ < 702
+import Var        (isTyCoVar)
+#endif
 import VarSet     (isEmptyVarSet)
 
 -- Internal Modules
@@ -50,7 +53,11 @@ coreExprToTerm unlocs = term
     term (Lit l)                 = S.Literal l
     term (App eFun (Type tyArg)) = S.TyApp (term eFun) tyArg
     term (App eFun eArg)         = S.App (term eFun) (term eArg)
+#if __GLASGOW_HASKELL__ >= 702
     term (Lam x e) | isTyVar x   = S.TyLambda x (term e)
+#else
+    term (Lam x e) | isTyCoVar x = S.TyLambda x (term e)
+#endif
                    | otherwise   = S.Lambda x (term e)
     term (Let (NonRec x e1) e2)  = S.LetRec [(x, term e1)] (term e2)
     term (Let (Rec xes) e)       = S.LetRec (map (second term) xes) (term e)

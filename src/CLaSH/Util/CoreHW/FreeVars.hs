@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module CLaSH.Util.CoreHW.FreeVars
   ( module CLaSH.Util.CoreHW.FreeVars
   , module VarSet
@@ -7,7 +8,11 @@ where
 -- GHC API
 import CoreFVs (idFreeVars)
 import Type    (tyVarsOfType)
+#if __GLASGOW_HASKELL__ >= 702
 import Var     (isTyVar)
+#else
+import Var     (isTyCoVar)
+#endif
 import VarSet
 
 -- Internal Modules
@@ -54,7 +59,11 @@ nonRecBinderFreeVars ::
   Var
   -> FreeVars
   -> FreeVars
+#if __GLASGOW_HASKELL__ >= 702
 nonRecBinderFreeVars x fvs | isTyVar x = fvs `delVarSet` x
+#else
+nonRecBinderFreeVars x fvs | isTyCoVar x = fvs `delVarSet` x
+#endif
                            | otherwise = (fvs `delVarSet` x) `unionVarSet` idFreeVars x
 
 nonRecBindersFreeVars ::

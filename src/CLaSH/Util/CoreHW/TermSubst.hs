@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE CPP           #-}
 module CLaSH.Util.CoreHW.TermSubst
   ( emptySubst
   , extendTvSubst
@@ -14,6 +15,9 @@ import qualified CoreSubst
 import Id        (maybeModifyIdInfo, idInfo, idName)
 import qualified Type
 import Var       (isTyVar, isLocalId, setVarType, varType)
+#if __GLASGOW_HASKELL__ < 702
+import Var       (isTyCoVar)
+#endif
 import VarEnv    (VarEnv, emptyVarEnv, extendVarEnv, lookupVarEnv, lookupInScope, extendInScopeSet, uniqAway, isEmptyVarEnv, delVarEnv)
 import VarSet    (VarSet, emptyVarSet, isEmptyVarSet)
 
@@ -31,7 +35,11 @@ emptyInScopeSet = CoreSubst.substInScope $ CoreSubst.emptySubst
 
 emptySubst      = TermSubst emptyInScopeSet emptyVarEnv emptyVarEnv
 
+#if __GLASGOW_HASKELL__ < 702
+extendTvSubst (TermSubst inScope ids tvs) var ty | isTyCoVar var = TermSubst inScope ids (extendVarEnv tvs var ty)
+#else
 extendTvSubst (TermSubst inScope ids tvs) var ty | isTyVar var = TermSubst inScope ids (extendVarEnv tvs var ty)
+#endif
                                                  | otherwise   = error $ $(curLoc) ++ "extendTvSubst called for non tyvar: " ++ show var
 
 substTerm :: TermSubst -> Term -> Term
