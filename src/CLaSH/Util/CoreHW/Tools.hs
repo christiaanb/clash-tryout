@@ -37,6 +37,7 @@ module CLaSH.Util.CoreHW.Tools
   , isPrimFun
   , getIntegerLiteral
   , filterLiterals
+  , isDictTy
   )
 where
 
@@ -60,8 +61,14 @@ import Literal    (Literal(..), literalType)
 import Name       (Name, mkInternalName, nameOccName, getOccString)
 import OccName    (mkVarOcc, occNameString)
 import SrcLoc     (noSrcSpan)
-import TyCon      (TyCon,tyConDataCons_maybe,isClosedSynTyCon,synTyConType,tyConName)
+import TyCon      (TyCon,tyConDataCons_maybe,isClosedSynTyCon,synTyConType,tyConName,isClassTyCon)
 import Type       (Type, Kind, applyTy, applyTys, mkForAllTy, mkFunTy, splitFunTy_maybe, isFunTy, splitTyConApp_maybe, tyVarsOfType, splitForAllTy_maybe)
+#if __GLASGOW_HASKELL__ < 702
+import Type       (isDictTy)
+#else
+import qualified Type
+import qualified TyCon
+#endif
 import TypeRep    (Type(..))
 import Var        (Var, mkTyVar, varName, varUnique, isTyVar)
 
@@ -129,6 +136,16 @@ primType p = case p of
   PrimDFun x -> idType x
 #if __GLASGOW_HASKELL__ >= 702
   PrimCo   x -> coercionType x
+#endif
+
+#if __GLASGOW_HASKELL__ >= 702
+isDictTy ::
+  Type
+  -> Bool
+isDictTy t | Type.isDictLikeTy t = True
+isDictTy t = case splitTyConApp_maybe t of
+  Just (tyCon, _) -> TyCon.isClassTyCon tyCon
+  Nothing -> False
 #endif
 
 applyTypeToArgs :: String -> Type -> [Either Term Type] -> Type

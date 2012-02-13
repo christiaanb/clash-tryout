@@ -34,7 +34,7 @@ import CLaSH.Driver.Types (DriverSession)
 import CLaSH.Netlist.Tools
 import CLaSH.Netlist.Types
 import CLaSH.Util (curLoc,makeCached,first,second)
-import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals, getType, mkApps, fromTfpInt)
+import CLaSH.Util.CoreHW (Var, Term(..), Prim(..), AltCon(..), CoreBinding, varString, varStringUniq, collectExprArgs, dataConIndex, dataConsFor, getTypeFail, isVar, getIntegerLiteral, filterLiterals, getType, mkApps, fromTfpInt, isDictTy)
 import CLaSH.Util.Pretty (pprString)
 
 genNetlist ::
@@ -104,7 +104,7 @@ mkConcSm (bndr, Var v) = genApplication bndr v []
 mkConcSm (bndr, app@(App _ _)) = do
   let (appF, args) = collectExprArgs app
   args'            <- Monad.filterM (fmap not . hasUntranslatableType) args
-  let primArgs     = filter (\a -> let t = getTypeFail a in not ((Type.isDictTy t) || (Coercion.isCoercionKind t))) args
+  let primArgs     = filter (\a -> let t = getTypeFail a in not ((isDictTy t) || (Coercion.isCoercionKind t))) args
   case appF of
     Var f -> case (all isVar args') of
       True  -> genApplication bndr f args'
