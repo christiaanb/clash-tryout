@@ -1,6 +1,8 @@
+{-# LANGUAGE TypeOperators #-}
 module CLaSH.Util.CoreHW.Transform
   ( substituteType
-  , inlineBind
+  , inlineBinders
+  , liftBinders
   , substituteExpr
   , regenUniques
   , cloneVar
@@ -10,7 +12,11 @@ where
 
 -- External Modules
 import qualified Control.Monad.Error as Error
+import qualified Control.Monad.State as State
+import Control.Monad.Trans.Class        (lift)
+import Data.Label                       ((:->))
 import qualified Data.Label.PureM    as Label
+import qualified Data.Map            as Map
 import Language.KURE                    (RewriteM, runRewrite, extractR, bottomupR, tryR, promoteR, liftQ)
 
 -- GHC API
@@ -19,12 +25,14 @@ import qualified IdInfo
 import qualified Type
 import qualified Var
 import qualified VarEnv
+import qualified VarSet
 
 -- Internal Modules
 import CLaSH.Util                  (MonadUnique(..), firstM, curLoc, mapAccumLM, partitionM, secondM)
+import CLaSH.Util.CoreHW.FreeVars  (termSomeFreeVars)
 import CLaSH.Util.CoreHW.Syntax    (Var, TyVar, Term(..), Type, AltCon(..))
 import CLaSH.Util.CoreHW.TermSubst (emptySubst,extendTvSubst,substTerm)
-import CLaSH.Util.CoreHW.Tools     (tyHasFreeTyVars, varStringUniq)
+import CLaSH.Util.CoreHW.Tools     (tyHasFreeTyVars, varStringUniq, mkLams, mkApps, getTypeFail)
 import CLaSH.Util.CoreHW.Traverse  (transformationStep, changed, startContext)
 import CLaSH.Util.CoreHW.Types     (TransformSession, TransformStep, CoreContext, CoreBinding)
 import CLaSH.Util.Pretty
@@ -38,32 +46,84 @@ substituteType find repl context expr = do
     let subst = extendTvSubst emptySubst find repl
     return $ substTerm subst expr
 
-inlineBind ::
+inlineBinders ::
   (Functor m, Monad m)
   => String
   -> (CoreBinding -> TransformSession m Bool)
   -> TransformStep m
-inlineBind caller condition context expr@(LetRec binds res) = do
+inlineBinders caller condition context expr@(LetRec binds res) = do
   (replace,others) <- liftQ $ partitionM condition binds
   case replace of
-    [] -> fail "inlineBind"
+    [] -> fail "inlineBinders"
     _  -> do
       let newExpr = case others of [] -> res ; _ -> LetRec others res
-      newExpr' <- liftQ $ substitute replace newExpr
+      newExpr' <- liftQ $ substituteBinders replace newExpr
       changed caller expr newExpr'
   where
-    substitute ::
-      (Functor m, Monad m)
-      => [CoreBinding]
-      -> Term
-      -> TransformSession m Term
-    substitute [] e = return e
-    substitute ((bndr,val):rest) e = do
-      e'    <- substituteExpr bndr val e
-      rest' <- mapM (secondM (substituteExpr bndr val)) rest
-      substitute rest' e'
 
-inlineBind _ _ _ _ = fail "inlineBind"
+inlineBinders _ _ _ _ = fail "inlineBinders"
+
+liftBinders ::
+  (Functor m, Monad m, State.MonadState s m)
+  => String
+  -> (CoreBinding -> TransformSession m Bool)
+  -> (s :-> Map.Map Var Term)
+  -> TransformStep m
+liftBinders caller condition globalEnv context expr@(LetRec binds res) = do
+  (replace,others) <- liftQ $ partitionM condition binds
+  case replace of
+    [] -> fail "liftBinders"
+    _ -> do
+      let newExpr = case others of [] -> res ; _ -> LetRec others res
+      replace' <- liftQ $ mapM (liftBinding globalEnv) replace
+      newExpr' <- liftQ $ substituteBinders replace' newExpr
+      changed caller expr newExpr'
+
+liftBinders _ _ _ _ _ = fail "liftBinders"
+
+substituteBinders ::
+  (Functor m, Monad m)
+  => [CoreBinding]
+  -> Term
+  -> TransformSession m Term
+substituteBinders [] e = return e
+substituteBinders ((bndr,val):rest) e = do
+  e'    <- substituteExpr bndr val e
+  rest' <- mapM (secondM (substituteExpr bndr val)) rest
+  substituteBinders rest' e'
+
+liftBinding ::
+  (Functor m, Monad m, State.MonadState s m)
+  => (s :-> Map.Map Var Term)
+  -> CoreBinding
+  -> TransformSession m CoreBinding
+liftBinding globalEnv (bndr,expr) = do
+  -- Get all the local FVs, excluding 'bndr' from the expression
+  localFVs    <- localFreeVars globalEnv [bndr] expr
+  -- Abstract expression over its local FVs
+  let newBody = mkLams localFVs expr
+  -- Make a new global ID
+  let bodyTy  = getTypeFail newBody
+  newBodyId   <- fmap (flip Var.setVarType $ bodyTy) $ cloneVar bndr
+  -- Make a new expression, consisting of the to be lifted function applied to it's free variables
+  let newExpr = mkApps (Var newBodyId) (map (\x -> case Var.isTyVar x of True -> Right (Type.mkTyVarTy x); False -> Left (Var x)) localFVs)
+  -- Replace all occurrences of 'bndr' by the newly applied expression
+  newBody'    <- substituteExpr bndr newExpr newBody
+  -- Add the new global binding
+  (lift . lift) $ Label.modify globalEnv (Map.insert newBodyId newBody')
+  return (bndr, newExpr)
+
+localFreeVars ::
+  (Functor m, Monad m, State.MonadState s m)
+  => (s :-> Map.Map Var Term)
+  -> [Var]
+  -> Term
+  -> TransformSession m [Var]
+localFreeVars globalEnv exclude expr = do
+    bndrs               <- fmap (Map.keys) $ (lift . lift) $ Label.gets globalEnv
+    let interesting var = Var.isLocalVar var && (var `notElem` (bndrs ++ exclude))
+    let freeVars        = VarSet.varSetElems $ termSomeFreeVars interesting expr
+    return freeVars
 
 substituteExpr ::
   (Functor m, Monad m)

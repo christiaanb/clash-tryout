@@ -9,6 +9,7 @@ module CLaSH.Normalize.Transformations
   , letTyApp
   , caseTyApp
   , bindPoly
+  , liftPoly
   , typeSpec
     -- Defunctionalisation Transformations
   , caseLet
@@ -68,17 +69,17 @@ import {-# SOURCE #-} CLaSH.Normalize (normalizeMaybe)
 import CLaSH.Normalize.Tools
 import CLaSH.Normalize.Types
 import CLaSH.Util (curLoc, partitionM, secondM, second, eitherM)
-import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBind, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple, applyForAllTy)
+import CLaSH.Util.CoreHW (CoreContext(..), Term(..), Prim(..), AltCon(..), TypedThing(..), Var, CoreBinding, Type, changed, mkInternalVar, isFun, isLam, applyFunTy, substituteType, substituteExpr, termString, termSomeFreeVars, exprUsesBinders, dataConIndex, isLet, collectArgs, isPoly, tyHasFreeTyVars, mkApps, mkLams, isApplicable, transformationStep, startContext, varString, hasFreeTyVars, isVar, varStringUniq, termFreeVars, regenUniques, termType, cloneVar, collectExprArgs, inlineBinders, liftBinders, isCon, builtinIds, builtinDicts, builtinDFuns, isPrimCon, isPrimFun, isSimple, applyForAllTy)
 import CLaSH.Util.Pretty (pprString)
 
 
 -- Shared Transformations
 lamApp :: NormalizeStep
-lamApp ctx e@(App (Lambda bndr expr) arg)    = changed "lamApp" e $ LetRec [(bndr,arg)] expr
+lamApp ctx e@(App (Lambda bndr expr) arg) = changed "lamApp" e $ LetRec [(bndr,arg)] expr
 lamApp _ _ = fail "lamApp"
 
 letApp :: NormalizeStep
-letApp ctx e@(App (LetRec binds expr) arg)   = changed "letApp" e $ LetRec binds (App expr arg)
+letApp ctx e@(App (LetRec binds expr) arg) = changed "letApp" e $ LetRec binds (App expr arg)
 letApp _ _ = fail "letApp"
 
 caseApp :: NormalizeStep
@@ -107,7 +108,22 @@ caseTyApp ctx e@(TyApp (Case scrut ty alts) ty') = changed "caseTyApp" e $ Case 
 caseTyApp _ _ = fail "caseTyApp"
 
 bindPoly :: NormalizeStep
-bindPoly = inlineBind "bindPoly" (return . isPoly . snd)
+bindPoly = inlineBinders "bindPoly" bindPolyTest
+  where
+    bindPolyTest (bndr,expr) = case (isPoly expr) of
+        True  -> do
+          localFVs <- localFreeVars expr
+          return $ (bndr `notElem` localFVs)
+        False -> return False
+
+liftPoly :: NormalizeStep
+liftPoly = liftBinders "liftPoly" liftPolyTest nsBindings
+  where
+    liftPolyTest (bndr,expr) = case (isPoly expr) of
+        True  -> do
+          localFVs <- localFreeVars expr
+          return $ (bndr `elem` localFVs)
+        False -> return False
 
 typeSpec :: NormalizeStep
 typeSpec ctx e@(TyApp e1 ty)
@@ -176,8 +192,7 @@ inlineBox ctx e@(Case scrut ty alts)
 inlineBox _ _ = fail "inlineBox"
 
 bindFun :: NormalizeStep
-bindFun = inlineBind "bindFun" (return . (\e -> isBox e || isFun e) . snd)
-
+bindFun = inlineBinders "bindFun" (return . (\e -> isBox e || isFun e) . snd)
 
 funSpec :: NormalizeStep
 funSpec ctx e@(App e1 e2)
@@ -238,7 +253,7 @@ appSimpl ctx e@(App appf arg)
 appSimpl _ _ = fail "appSimpl"
 
 bindNonRep :: NormalizeStep
-bindNonRep = inlineBind ("bindNonRep") (isUntranslatable . fst)
+bindNonRep = inlineBinders ("bindNonRep") (isUntranslatable . fst)
 
 -- Specialize representable functions on untranslatable arguments
 nonRepSpec :: NormalizeStep
@@ -325,7 +340,7 @@ retLet ctx expr@(LetRec binds body) | all isLambdaBodyCtx ctx = do
 retLet _ _ = fail "retLet"
 
 inlineVar :: NormalizeStep
-inlineVar = inlineBind "inlineVar" (isLocalVar . snd)
+inlineVar = inlineBinders "inlineVar" (isLocalVar . snd)
 
 letFlat :: NormalizeStep
 letFlat c topExpr@(LetRec binds expr) = do
