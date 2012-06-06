@@ -1,8 +1,8 @@
 module CLaSH
   ( module CLaSH.Builtin
-  , generateVHDL
+--  , generateVHDL
   )
 where
 
 import CLaSH.Builtin
-import CLaSH.Driver (generateVHDL)
+-- import CLaSH.Driver (generateVHDL)

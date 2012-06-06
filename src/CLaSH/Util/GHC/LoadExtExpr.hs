@@ -77,22 +77,22 @@ loadDecl uniqSupply decl = do
         _ -> return Nothing
     _ -> return Nothing
 
-coreExprFromDFunUnfolding ::
-  UniqSupply.UniqSupply
-  -> Var.Var
-  -> DataCon.DataCon
-  -> [CoreSyn.CoreExpr]
-  -> Maybe CoreSyn.CoreExpr
-coreExprFromDFunUnfolding uniqSupply dfunId dfunDc dfunOps = Just dfunExpr
-  where
-    uniques                     = UniqSupply.uniqsFromSupply uniqSupply
-    dfunTy                      = Id.idType dfunId
-    (dfTVs,dfThetas,dfunResTys) = TcType.tcSplitSigmaTy dfunTy
-    dfThetaVars                 = zipWith3 Id.mkSysLocal (repeat $ FastString.mkFastString "dict") uniques (Type.mkPredTys dfThetas)
-    (_,[dfArgTy])               = Type.splitAppTys dfunResTys
-    dwrapId                     = DataCon.dataConWrapId dfunDc
-    dfunVars                    = map (CoreSyn.Type . Type.mkTyVarTy) dfTVs ++ map CoreSyn.Var dfThetaVars
-    dfunOps'                    = zipWith MkCore.mkCoreApps dfunOps $ repeat dfunVars
-    dfunDcExpr'                 = MkCore.mkCoreApps (CoreSyn.Var dwrapId) (CoreSyn.Type dfArgTy : dfunOps')
-    dfunExpr                    = MkCore.mkCoreLams (dfTVs ++ dfThetaVars) dfunDcExpr'
+-- coreExprFromDFunUnfolding ::
+--   UniqSupply.UniqSupply
+--   -> Var.Var
+--   -> DataCon.DataCon
+--   -> [CoreSyn.CoreExpr]
+--   -> Maybe CoreSyn.CoreExpr
+-- coreExprFromDFunUnfolding uniqSupply dfunId dfunDc dfunOps = Just dfunExpr
+--   where
+--     uniques                     = UniqSupply.uniqsFromSupply uniqSupply
+--     dfunTy                      = Id.idType dfunId
+--     (dfTVs,dfThetas,dfunResTys) = TcType.tcSplitSigmaTy dfunTy
+--     dfThetaVars                 = zipWith3 Id.mkSysLocal (repeat $ FastString.mkFastString "dict") uniques (Type.mkPredTys dfThetas)
+--     (_,[dfArgTy])               = Type.splitAppTys dfunResTys
+--     dwrapId                     = DataCon.dataConWrapId dfunDc
+--     dfunVars                    = map (CoreSyn.Type . Type.mkTyVarTy) dfTVs ++ map CoreSyn.Var dfThetaVars
+--     dfunOps'                    = zipWith MkCore.mkCoreApps dfunOps $ repeat dfunVars
+--     dfunDcExpr'                 = MkCore.mkCoreApps (CoreSyn.Var dwrapId) (CoreSyn.Type dfArgTy : dfunOps')
+--     dfunExpr                    = MkCore.mkCoreLams (dfTVs ++ dfThetaVars) dfunDcExpr'
 

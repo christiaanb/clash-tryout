@@ -25,6 +25,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Language.Haskell.TH as TH
+import Debug.Trace (trace)
 
 -- GHC API
 import Outputable
@@ -148,3 +149,6 @@ eitherM ::
   -> m c
 eitherM f g (Left a)  = f a
 eitherM f g (Right b) = g b
+
+traceIf True msg = trace msg
+traceIf False _  = id

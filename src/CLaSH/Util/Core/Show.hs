@@ -1,7 +1,8 @@
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE CPP                  #-}
 module CLaSH.Util.Core.Show
 where
 
@@ -12,7 +13,11 @@ import qualified TyCon
 
 deriving instance (Show b) => Show (CoreSyn.Expr b)
 deriving instance (Show b) => Show (CoreSyn.Bind b)
+#if __GLASGOW_HASKELL__ < 702
 deriving instance Show CoreSyn.Note
+#else
+deriving instance Show a => Show (CoreSyn.Tickish a)
+#endif
 deriving instance Show TyCon.SynTyConRhs
 
 instance Show TyCon.TyCon where
@@ -28,7 +33,7 @@ instance Show TyCon.TyCon where
            showtc "PrimTyCon" ""
          | TyCon.isSuperKindTyCon t =
            showtc "SuperKindTyCon" ""
-         | otherwise = 
+         | otherwise =
            "_OTHER tycon?:(" ++ showSDoc (ppr t) ++ ")_"
       where
         showtc con extra = "(" ++ con ++ " {tyConName = " ++ name ++ extra ++ ", ...})"

@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE CPP           #-}
 module CLaSH.Netlist
   ( genNetlist
   )
@@ -104,7 +105,11 @@ mkConcSm (bndr, Var v) = genApplication bndr v []
 mkConcSm (bndr, app@(App _ _)) = do
   let (appF, args) = collectExprArgs app
   args'            <- Monad.filterM (fmap not . hasUntranslatableType) args
+#if __GLASGOW_HASKELL__ >= 704
+  let primArgs     = filter (\a -> let t = getTypeFail a in not ((isDictTy t) || (Type.isPredTy t))) args
+#else
   let primArgs     = filter (\a -> let t = getTypeFail a in not ((isDictTy t) || (Coercion.isCoercionKind t))) args
+#endif
   case appF of
     Var f -> case (all isVar args') of
       True  -> genApplication bndr f args'

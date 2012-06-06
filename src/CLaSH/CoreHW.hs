@@ -13,6 +13,7 @@ import qualified Data.Label.PureM           as LabelM
 import Data.Map                                (Map)
 import qualified Data.Map                   as Map
 import qualified Data.Maybe                 as Maybe
+import qualified Data.List                  as List
 
 -- GHC API
 import qualified CoreFVs
@@ -24,7 +25,7 @@ import qualified VarSet
 -- Internal Modules
 import CLaSH.Driver.Tools             (getGlobalExpr)
 import CLaSH.Driver.Types             (DriverSession, drUniqSupply)
-import CLaSH.Util                     (UniqSupply, curLoc, makeCached)
+import CLaSH.Util                     (UniqSupply, curLoc, makeCached, traceIf)
 import CLaSH.Util.CoreHW.Constants    (builtinIds)
 import CLaSH.Util.CoreHW.CoreToCoreHW (coreExprToTerm)
 import CLaSH.Util.CoreHW.FreeVars     (termFreeVars)
@@ -70,7 +71,9 @@ coreToCoreHW' (bndr:bndrs) = do
                                    (Id.isClassOpId_maybe v == Nothing) &&
                                    (varString v) `notElem` builtinIds)
                             (termFreeVars term)
-      translatedUsed    <- coreToCoreHW' usedFreeBndrs
+      alreadyTranslated <- fmap Map.keys $ LabelM.gets chwTranslated
+      let toTranslate = usedFreeBndrs List.\\ alreadyTranslated
+      translatedUsed    <- traceIf True (show bndr ++ " uses: " ++ show toTranslate) $ coreToCoreHW' toTranslate
       translatedOthers  <- coreToCoreHW' bndrs
       return ((bndr,term):(translatedUsed ++ translatedOthers))
     Nothing -> fail $ $(curLoc) ++ "Expr belonging to binder: " ++ varStringUniq bndr ++ " is not found."

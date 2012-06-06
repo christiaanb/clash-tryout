@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE CPP           #-}
 module CLaSH.Desugar.Transformations
   ( inlineArrowBndr
   , componentCastRemoval
@@ -59,7 +60,11 @@ arrDesugar ctx expr@(Var arr) | (Name.getOccString arr) == "arr" = do
   let ([bTV,cTV],[],compTy'')       = TcType.tcSplitSigmaTy compTy'
   let ([fTy],_)                     = TcType.tcSplitFunTys  compTy''
   fId                               <- liftQ $ mkInternalVar "tFun" fTy
+#if __GLASGOW_HASKELL__ >= 704
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" arrowDict
+#else
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+#endif
   let resExpr                       = MkCore.mkCoreLams [arrTV,arrowDictId,bTV,cTV,fId] (Var fId)
   changed "arrDesugar" resExpr
 
@@ -69,7 +74,11 @@ returnADesugar :: DesugarStep
 returnADesugar ctx expr@(Var returnA) | (Name.getOccString returnA) == "returnA" = do
   let compTy                          = getTypeFail expr
   let ([aTV,bTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+#if __GLASGOW_HASKELL__ >= 704
+  arrowDictId                         <- liftQ $ mkInternalVar "arrowDict" arrowDict
+#else
   arrowDictId                         <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+#endif
   outId                               <- liftQ $ mkInternalVar "out" (Type.mkTyVarTy bTV)
   let resExpr                         = MkCore.mkCoreLams [aTV,bTV,arrowDictId,outId] (Var outId)
   changed "returnADesugar" resExpr
@@ -80,8 +89,12 @@ hooksDesugar :: DesugarStep
 hooksDesugar ctx expr@(Var hooks) | (Name.getOccString hooks) == ">>>" = do
   let compTy                        = getTypeFail expr
   let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+#if __GLASGOW_HASKELL__ >= 704
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" arrowDict
+#else
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
-  let ([aTV,bTV,cTV],[],_)           = TcType.tcSplitSigmaTy compTy'
+#endif
+  let ([aTV,bTV,cTV],[],_)          = TcType.tcSplitSigmaTy compTy'
   let [aTy,bTy,cTy]                 = map Type.mkTyVarTy [aTV,bTV,cTV]
   let fTy                           = Type.mkFunTy aTy bTy
   let gTy                           = Type.mkFunTy bTy cTy
@@ -101,7 +114,11 @@ firstDesugar :: DesugarStep
 firstDesugar ctx expr@(Var first) | (Name.getOccString first) == "first" = do
   let compTy                        = getTypeFail expr
   let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+#if __GLASGOW_HASKELL__ >= 704
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" arrowDict
+#else
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+#endif
   let ([bTV,cTV,dTV],[],_)          = TcType.tcSplitSigmaTy compTy'
   let [bTy,cTy,dTy]                 = map Type.mkTyVarTy [bTV,cTV,dTV]
   let fTy                           = Type.mkFunTy bTy cTy
@@ -156,7 +173,11 @@ loopDesugar :: DesugarStep
 loopDesugar ctx expr@(Var loop) | Name.getOccString loop == "loop" = do
   let compTy                        = getTypeFail expr
   let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+#if __GLASGOW_HASKELL__ >= 704
+  arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" arrowDict
+#else
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" (Type.mkPredTy arrowDict)
+#endif
   let ([bTV,dTV,cTV],_,compTy'')    = TcType.tcSplitSigmaTy compTy'
   let [bTy,dTy,cTy]                 = map Type.mkTyVarTy [bTV,dTV,cTV]
   let finpTy                        = TysWiredIn.mkBoxedTupleTy [bTy, dTy]
@@ -202,7 +223,11 @@ blockRamDesugar ctx expr@(App _ _)
   = do
     let forallTy                                   = getTypeFail blockRam
     let ([sizeTV,dataTV],[posDict],funTy)          = TcType.tcSplitSigmaTy forallTy
+#if __GLASGOW_HASKELL__ >= 704
+    posDictId                                      <- liftQ $ mkInternalVar "posDict" posDict
+#else
     posDictId                                      <- liftQ $ mkInternalVar "posDict" (Type.mkPredTy posDict)
+#endif
     let ([sizeArgTy,clockArgTy],compTy)            = TcType.tcSplitFunTys funTy
     let (compTC, [compInpTy,compOutpTy])           = TcType.tcSplitTyConApp compTy
     [sizeId,clockId,inputId,outputId]              <- liftQ $ Monad.zipWithM mkInternalVar ["bsize","bclk","binp","boutp"] [sizeArgTy,clockArgTy,compInpTy,compOutpTy]

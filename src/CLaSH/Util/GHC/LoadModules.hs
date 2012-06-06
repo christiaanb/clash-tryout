@@ -43,8 +43,13 @@ loadModules modName =
 
 parseModule :: GHC.GhcMonad m => GHC.ModSummary -> m GHC.ParsedModule
 parseModule modSum = do
+#if __GLASGOW_HASKELL__ >= 704
+  (GHC.ParsedModule pmModSum pmParsedSource extra) <- GHC.parseModule modSum
+  return (GHC.ParsedModule (disableOptimizationsFlags pmModSum) pmParsedSource extra)
+#else
   (GHC.ParsedModule pmModSum pmParsedSource) <- GHC.parseModule modSum
   return (GHC.ParsedModule (disableOptimizationsFlags pmModSum) pmParsedSource)
+#endif
 
 disableOptimizationsFlags :: GHC.ModSummary -> GHC.ModSummary
 disableOptimizationsFlags ms@(GHC.ModSummary {..}) = ms {GHC.ms_hspp_opts = dflags}

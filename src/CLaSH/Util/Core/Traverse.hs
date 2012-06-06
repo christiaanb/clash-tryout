@@ -201,6 +201,7 @@ castU rr = translate $ \e -> case e of
   (CoreSyn.Cast expr co) -> apply (Other) rr expr
   _                      -> fail "castU"
 
+#if __GLASGOW_HASKELL__ < 704
 noteR :: (Monad m)
   => Rewrite m [CoreContext] CoreSyn.CoreExpr
   -> Rewrite m [CoreContext] CoreSyn.CoreExpr
@@ -214,6 +215,7 @@ noteU :: (Monad m, Monoid r)
 noteU rr = translate $ \e -> case e of
   (CoreSyn.Note note expr) -> apply (Other) rr expr
   _                        -> fail "noteU"
+#endif
 
 typeR :: (Monoid dec, Monad m)
   => Rewrite m dec CoreSyn.CoreExpr
@@ -241,6 +243,22 @@ coercionU = translate $ \e -> case e of
   _               -> fail "coercionU"
 #endif
 
+#if __GLASGOW_HASKELL__ >= 704
+tickR :: (Monad m)
+  => Rewrite m [CoreContext] CoreSyn.CoreExpr
+  -> Rewrite m [CoreContext] CoreSyn.CoreExpr
+tickR rr = transparently $ rewrite $ \e -> case e of
+  (CoreSyn.Tick tick expr) -> liftM (CoreSyn.Tick tick) (apply Other rr expr)
+  _                        -> fail "tickR"
+
+tickU :: (Monad m, Monoid r)
+  => Translate m [CoreContext] CoreSyn.CoreExpr r
+  -> Translate m [CoreContext] CoreSyn.CoreExpr r
+tickU rr = translate $ \e -> case e of
+  (CoreSyn.Tick tick expr) -> apply (Other) rr expr
+  _                        -> fail "tickU"
+#endif
+
 instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
   allR rr   =  varR
             <+ litR
@@ -249,7 +267,11 @@ instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
             <+ letR  (extractR rr) (extractR rr)
             <+ caseR (extractR rr) (extractR rr)
             <+ castR (extractR rr)
+#if __GLASGOW_HASKELL__ >= 704
+            <+ tickR (extractR rr)
+#else
             <+ noteR (extractR rr)
+#endif
             <+ typeR
 #if __GLASGOW_HASKELL__ >= 702
             <+ coercionR
@@ -261,7 +283,11 @@ instance (Monad m) => Walker m [CoreContext] CoreSyn.CoreExpr where
             <+ letU  (extractU rr) (extractU rr)
             <+ caseU (extractU rr) (extractU rr)
             <+ castU (extractU rr)
+#if __GLASGOW_HASKELL__ >= 704
+            <+ tickU (extractU rr)
+#else
             <+ noteU (extractU rr)
+#endif
             <+ typeU
 #if __GLASGOW_HASKELL__ >= 702
             <+ coercionU

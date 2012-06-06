@@ -391,10 +391,25 @@ getIntegerLiteral tfpSynLens expr@(App _ _) =
     (_, [Left (Literal (MachInt64 integer))])  -> return integer
     (_, [Left (Literal (MachWord integer))])   -> return integer
     (_, [Left (Literal (MachWord64 integer))]) -> return integer
+#if __GLASGOW_HASKELL__ >= 704
+    (_, [Left (Literal (LitInteger integer _))]) -> return integer
+#endif
     _ -> Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString expr
     --(Var f, [Type decTy, decDict, Type numTy, numDict, arg])
     --  | getFullString f == "Types.Data.Num.Ops.fromIntegerT" -> do
     --    fromTfpInt tfpSynLens decTy
+
+#if __GLASGOW_HASKELL__ >= 704
+getIntegerLiteral tfpSynLens expr@(Literal l) =
+  case l of
+    (MachInt integer)    -> return integer
+    (MachInt64 integer)  -> return integer
+    (MachWord integer)   -> return integer
+    (MachWord64 integer) -> return integer
+    (LitInteger integer _) -> return integer
+    _ -> Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString expr
+#endif
+
 getIntegerLiteral _ e = Error.throwError $ $(curLoc) ++ "No integer literal found: " ++ pprString e
 
 filterLiterals ::

@@ -25,20 +25,21 @@ Library
   extensions:          TemplateHaskell
   ghc-options:         -O2
 
-  Build-depends:       base             >= 4.3.1.0 && < 4.5,
+  Build-depends:       base             >= 4.3.1.0 && < 4.6,
                        containers       >= 0.4.0.0 && < 0.5,
-                       ghc              >= 7.0     && < 7.3,
+                       ghc              >= 7.0     && < 7.5,
                        fclabels         >= 1.0.4   && < 1.2,
                        kure             >= 0.3.1   && < 0.4,
-                       time             >= 1.2.0.3 && < 1.3,
+                       time             >= 1.2.0.3 && < 1.5,
                        mtl              >= 2.0.1.0 && < 2.1,
-                       template-haskell >= 2.5.0.0 && < 2.7,
+                       template-haskell >= 2.5.0.0 && < 2.8,
                        ghc-paths        >= 0.1.0.8 && < 0.2,
                        th-lift          >= 0.5.4   && < 0.6,
-                       tfp              >= 0.4     && < 0.5,
+                       tfp              >= 0.7     && < 0.8,
                        pretty           >= 1.0.1.2 && < 1.2,
-                       filepath         >= 1.2.0.0 && < 1.3,
-                       directory        >= 1.1.0.0 && < 1.2
+                       filepath         >= 1.2.0.0 && < 1.4,
+                       directory        >= 1.1.0.0 && < 1.2,
+                       transformers     >= 0.2.2.0 && < 0.3
 
   Other-modules:       CLaSH.CoreHW,
                        CLaSH.Desugar,
