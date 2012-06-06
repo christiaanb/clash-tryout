@@ -86,9 +86,10 @@ coreExprToTerm unlocs expr = term expr
             (_:_,[]) -> error $ "Patterns binding type variables are not supported: \n" ++
                                 "DataCon: " ++ pprString dc ++ "\nVariables: " ++ pprString xs ++
                                 "\nExpression: \n" ++ pprString expr
-            ([],_:_) -> error $ "Patterns binding coercions are not supported: \n" ++
-                                "DataCon: " ++ pprString dc ++ "\nVariables: " ++ pprString xs ++
-                                "\nExpression: \n" ++ pprString expr
+            ([],_:_) -> traceIf True ("Patterns binding coercions are not supported: \n" ++
+                                      "DataCon: " ++ pprString dc ++ "\nVariables: " ++ pprString xs ++
+                                      "\nExpression: \n" ++ pprString expr)
+                                     (S.DataAlt dc ys, term e)
       where
         (as,ys) = span isTyVar xs
 #if __GLASGOW_HASKELL__ >= 702
