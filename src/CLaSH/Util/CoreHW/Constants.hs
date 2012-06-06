@@ -25,8 +25,8 @@ builtinFuns = concat
   [ stateFuns
   , bitFuns
   , vecFuns
-  --, unsignedFuns
-  --, signedFuns
+  , unsignedFuns
+  , signedFuns
   , numFuns
   , eqFuns
   , ordFuns
