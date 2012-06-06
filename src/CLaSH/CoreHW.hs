@@ -73,7 +73,7 @@ coreToCoreHW' (bndr:bndrs) = do
                             (termFreeVars term)
       alreadyTranslated <- fmap Map.keys $ LabelM.gets chwTranslated
       let toTranslate = usedFreeBndrs List.\\ alreadyTranslated
-      translatedUsed    <- traceIf True (show bndr ++ " uses: " ++ show toTranslate) $ coreToCoreHW' toTranslate
+      translatedUsed    <- traceIf False (show bndr ++ " uses: " ++ show toTranslate) $ coreToCoreHW' toTranslate
       translatedOthers  <- coreToCoreHW' bndrs
       return ((bndr,term):(translatedUsed ++ translatedOthers))
     Nothing -> fail $ $(curLoc) ++ "Expr belonging to binder: " ++ varStringUniq bndr ++ " is not found."
