@@ -105,7 +105,7 @@ readVector = read
 vlength :: forall s a . NaturalT s => Vector s a -> Int
 vlength _ = fromIntegerT (undefined :: s)
 
-maxIndex :: (PositiveT s, PositiveT (Log2 s)) => Vector s a -> Unsigned (Log2 s)
+maxIndex :: (PositiveT s, PositiveT (Log2Ceil s)) => Vector s a -> Unsigned (Log2Ceil s)
 maxIndex _ = maxBound
 
 vlengthT :: NaturalT s => Vector s a -> s
@@ -117,14 +117,14 @@ fromVector (Vector xs) = xs
 vnull :: Vector D0 a -> Bool
 vnull _ = True
 
-(!) :: PositiveT s => Vector s a -> Unsigned (Log2 s) -> a
+(!) :: PositiveT s => Vector s a -> Unsigned (Log2Ceil s) -> a
 (Vector xs) ! (Unsigned i) = xs !! (fromIntegral i)
 
 -- ==========================
 -- = Transforming functions =
 -- ==========================
 vreplace :: PositiveT s =>
-  Vector s a -> Unsigned (Log2 s) -> a -> Vector s a
+  Vector s a -> Unsigned (Log2Ceil s) -> a -> Vector s a
 vreplace (Vector xs) (Unsigned i) y = Vector $ replace' xs i y
   where replace' []     _ _ = []
         replace' (_:xs) 0 y = (y:xs)

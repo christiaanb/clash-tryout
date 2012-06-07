@@ -473,7 +473,7 @@ fromTfpInt tfpSynLens ty@(TyConApp tycon args) = case (isClosedSynTyCon tycon, n
       "Pow2" -> do
         int <- fromTfpInt tfpSynLens $ head args
         return $ 2 ^ int
-      "Log2" -> do
+      "Log2Ceil" -> do
         int <- fromTfpInt tfpSynLens $ head args
         return $ ceiling $ logBase 2 (fromIntegral int)
       "Mul2" -> do
