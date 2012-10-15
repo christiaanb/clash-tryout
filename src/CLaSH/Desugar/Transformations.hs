@@ -86,9 +86,10 @@ returnADesugar ctx expr@(Var returnA) | (Name.getOccString returnA) == "returnA"
 returnADesugar ctx expr = fail "arrowReturnADesugar"
 
 hooksDesugar :: DesugarStep
-hooksDesugar ctx expr@(Var hooks) | (Name.getOccString hooks) == ">>>" = do
-  let compTy                        = getTypeFail expr
-  let ([arrTV],[arrowDict],compTy') = TcType.tcSplitSigmaTy compTy
+hooksDesugar ctx expr@(Var hooks)
+  | (Name.getOccString hooks) == ">>>"
+  , ([arrTV],[arrowDict],compTy') <- TcType.tcSplitSigmaTy $ getTypeFail expr
+  = do
 #if __GLASGOW_HASKELL__ >= 704
   arrowDictId                       <- liftQ $ mkInternalVar "arrowDict" arrowDict
 #else
@@ -105,6 +106,28 @@ hooksDesugar ctx expr@(Var hooks) | (Name.getOccString hooks) == ">>>" = do
                                           ]
   let resExpr                      = MkCore.mkCoreLams
                                       [arrTV,arrowDictId,aTV,bTV,cTV,fId,gId,inpId]
+                                      (MkCore.mkCoreLet letBndrs (Var outpId))
+  changed "hooksDesugar" resExpr
+
+hooksDesugar ctx expr@(Var hooks)
+  | (Name.getOccString hooks) == ">>>"
+  , ([catTV,aTV,bTV,cTV],[catDict],compTy') <- TcType.tcSplitSigmaTy $ getTypeFail expr
+  = do
+#if __GLASGOW_HASKELL__ >= 704
+  catDictId                       <- liftQ $ mkInternalVar "catDict" catDict
+#else
+  catDictId                       <- liftQ $ mkInternalVar "catDict" (Type.mkPredTy catDict)
+#endif
+  let [aTy,bTy,cTy]                 = map Type.mkTyVarTy [aTV,bTV,cTV]
+  let fTy                           = Type.mkFunTy aTy bTy
+  let gTy                           = Type.mkFunTy bTy cTy
+  [fId,gId]                         <- liftQ $ Monad.zipWithM mkInternalVar ["f","g"] [fTy,gTy]
+  [inpId,conId,outpId]              <- liftQ $ Monad.zipWithM mkInternalVar ["inp","con","outp"] [aTy, bTy, cTy]
+  let letBndrs                      = Rec [ (conId, App (Var fId) (Var inpId))
+                                          , (outpId, App (Var gId) (Var conId))
+                                          ]
+  let resExpr                      = MkCore.mkCoreLams
+                                      [catTV,aTV,bTV,cTV,catDictId,fId,gId,inpId]
                                       (MkCore.mkCoreLet letBndrs (Var outpId))
   changed "hooksDesugar" resExpr
 

@@ -26,20 +26,20 @@ Library
   ghc-options:         -O2
 
   Build-depends:       base             >= 4.3.1.0 && < 4.6,
-                       containers       >= 0.4.0.0 && < 0.5,
+                       containers       >= 0.4.0.0,
                        ghc              >= 7.0     && < 7.5,
-                       fclabels         >= 1.0.4   && < 1.2,
-                       kure             >= 0.3.1   && < 0.4,
-                       time             >= 1.2.0.3 && < 1.5,
-                       mtl              >= 2.0.1.0 && < 2.1,
-                       template-haskell >= 2.5.0.0 && < 2.8,
-                       ghc-paths        >= 0.1.0.8 && < 0.2,
-                       th-lift          >= 0.5.4   && < 0.6,
-                       tfp              >= 0.7     && < 0.8,
-                       pretty           >= 1.0.1.2 && < 1.2,
-                       filepath         >= 1.2.0.0 && < 1.4,
-                       directory        >= 1.1.0.0 && < 1.2,
-                       transformers     >= 0.2.2.0 && < 0.3
+                       fclabels         >= 1.0.4,
+                       kure             >= 0.3.1 && < 2.0,
+                       time             >= 1.2.0.3,
+                       mtl              >= 2.0.1.0,
+                       template-haskell >= 2.5.0.0,
+                       ghc-paths        >= 0.1.0.8,
+                       th-lift          >= 0.5.4,
+                       tfp              >= 0.7,
+                       pretty           >= 1.0.1.2,
+                       filepath         >= 1.2.0.0,
+                       directory        >= 1.1.0.0,
+                       transformers     >= 0.2.2.0
 
   Other-modules:       CLaSH.CoreHW,
                        CLaSH.Desugar,
